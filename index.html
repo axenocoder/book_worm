@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: var(--tg-theme-bg-color, #ffffff); 
+            color: var(--tg-theme-text-color, #000000); 
+        }
+        #viewer { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="viewer"></div>
+    <script>
+        // Растягиваем Mini App на весь экран Telegram
+        window.Telegram.WebApp.expand();
+
+        // Загружаем и отображаем книгу
+        var book = ePub("infinity_jest.epub");
+        var rendition = book.renderTo("viewer", { 
+            width: "100%", 
+            height: "100%",
+            spread: "none"
+        });
+        
+        rendition.display();
+
+        // Перелистывание кликом по краям экрана
+        document.addEventListener("click", function(e) {
+            var width = window.innerWidth;
+            if (e.clientX < width * 0.3) rendition.prev();
+            else if (e.clientX > width * 0.7) rendition.next();
+        });
+    </script>
+</body>
+</html>
