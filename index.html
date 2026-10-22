@@ -3,41 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Читалка</title>
+    <!-- Telegram Web App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- JSZip и epub.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
     <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            overflow: hidden; 
-            background: var(--tg-theme-bg-color, #ffffff); 
-            color: var(--tg-theme-text-color, #000000); 
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
         }
-        #viewer { width: 100vw; height: 100vh; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #111111);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #viewer {
+            width: 100vw;
+            height: 100vh;
+        }
     </style>
 </head>
 <body>
     <div id="viewer"></div>
-    <script>
-        // Растягиваем Mini App на весь экран Telegram
-        window.Telegram.WebApp.expand();
 
-        // Загружаем и отображаем книгу
-        var book = ePub("infinity_jest.epub");
-        var rendition = book.renderTo("viewer", { 
-            width: "100%", 
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+        }
+
+        // 1. Определение цветов темы Telegram
+        function getThemeColors() {
+            const isDark = tg?.colorScheme === 'dark' || document.documentElement.classList.contains('dark');
+            return {
+                bg: tg?.themeParams?.bg_color || (isDark ? "#18222d" : "#ffffff"),
+                text: tg?.themeParams?.text_color || (isDark ? "#e1e1e1" : "#111111")
+            };
+        }
+
+        const colors = getThemeColors();
+
+        // 2. Инициализация книги
+        const book = ePub("book.epub");
+        const rendition = book.renderTo("viewer", {
+            width: "100%",
             height: "100%",
             spread: "none"
         });
-        
+
+        // 3. Регистрация темы оформления для содержимого книги
+        rendition.themes.register("tg-auto-theme", {
+            "body": {
+                "background-color": `${colors.bg} !important`,
+                "color": `${colors.text} !important`,
+                "padding": "0 16px !important",
+                "font-family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important",
+                "line-height": "1.6 !important"
+            },
+            "p, span, div, h1, h2, h3, h4, h5, h6": {
+                "color": `${colors.text} !important`
+            }
+        });
+
+        rendition.themes.select("tg-auto-theme");
         rendition.display();
 
-        // Перелистывание кликом по краям экрана
-        document.addEventListener("click", function(e) {
-            var width = window.innerWidth;
-            if (e.clientX < width * 0.3) rendition.prev();
-            else if (e.clientX > width * 0.7) rendition.next();
+        // 4. Отслеживание смены темы в реальном времени
+        if (tg) {
+            tg.onEvent("themeChanged", () => {
+                const updated = getThemeColors();
+                rendition.themes.override("background-color", updated.bg, true);
+                rendition.themes.override("color", updated.text, true);
+                document.body.style.backgroundColor = updated.bg;
+                document.body.style.color = updated.text;
+            });
+        }
+
+        // 5. Обработка кликов и свайпов внутри фрейма книги
+        rendition.on("rendered", (section, view) => {
+            const frameDoc = view.document;
+            if (!frameDoc) return;
+
+            // Клик по левой/правой трети экрана
+            frameDoc.addEventListener("click", (e) => {
+                const width = window.innerWidth;
+                if (e.clientX < width * 0.35) {
+                    rendition.prev();
+                } else if (e.clientX > width * 0.65) {
+                    rendition.next();
+                }
+            });
+
+            // Свайпы для мобильных и планшетов (Touch Events)
+            let touchStartX = 0;
+            let touchStartY = 0;
+
+            frameDoc.addEventListener("touchstart", (e) => {
+                touchStartX = e.changedTouches[0].clientX;
+                touchStartY = e.changedTouches[0].clientY;
+            }, { passive: true });
+
+            frameDoc.addEventListener("touchend", (e) => {
+                const diffX = e.changedTouches[0].clientX - touchStartX;
+                const diffY = e.changedTouches[0].clientY - touchStartY;
+
+                // Проверяем, что движение горизонтальное и длиннее 40px
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+                    if (diffX < 0) {
+                        rendition.next(); // Свайп влево -> следующая страница
+                    } else {
+                        rendition.prev(); // Свайп вправо -> предыдущая страница
+                    }
+                }
+            }, { passive: true });
+        });
+
+        // Клавиатурные стрелки (если открыто с десктопа)
+        rendition.on("keyup", (e) => {
+            if (e.key === "ArrowRight") rendition.next();
+            if (e.key === "ArrowLeft") rendition.prev();
         });
     </script>
 </body>
