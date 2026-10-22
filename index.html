@@ -13,7 +13,7 @@
         :root {
             --bg-color: #0f0f10;
             --text-color: #ececec;
-            --ui-bg: rgba(26, 26, 28, 0.95);
+            --ui-bg: rgba(26, 26, 28, 0.96);
             --ui-border: rgba(255, 255, 255, 0.1);
             --accent: #ff4b4b;
         }
@@ -36,9 +36,23 @@
             -webkit-user-select: none;
         }
 
-        #viewer {
+        /* Контейнер книги с поддержкой жеста перетягивания */
+        #viewer-container {
             width: 100vw;
             height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #viewer {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform;
+        }
+
+        #viewer.dragging {
+            transition: none; /* Отключаем задержку во время движения пальцем */
         }
 
         /* --- ХЕДЕР И ФУТЕР --- */
@@ -166,7 +180,7 @@
             transform: translate(-50%, -100%);
         }
 
-        /* --- ПАНЕЛЬ НАСТРОЙКИ (ШРИФТ И ТЕМА) --- */
+        /* --- ПАНЕЛЬ НАСТРОЙКИ С НАВИГАЦИЕЙ «НАЗАД» --- */
         .settings-sheet {
             position: fixed;
             bottom: 0;
@@ -174,7 +188,7 @@
             width: 100%;
             background: var(--ui-bg);
             border-top: 1px solid var(--ui-border);
-            padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+            padding: 16px 20px calc(18px + env(safe-area-inset-bottom));
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -185,6 +199,28 @@
 
         .settings-sheet.visible {
             transform: translateY(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+        }
+
+        .btn-back {
+            background: none;
+            border: none;
+            color: var(--accent);
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0;
         }
 
         .theme-buttons {
@@ -310,6 +346,11 @@
             background: rgba(255, 255, 255, 0.03);
             border-radius: 0 8px 8px 0;
             padding: 10px;
+            cursor: pointer;
+        }
+
+        .quote-item:active {
+            background: rgba(255, 75, 75, 0.1);
         }
 
         .quote-date {
@@ -334,7 +375,10 @@
     </style>
 </head>
 <body>
-    <div id="viewer"></div>
+    <div id="viewer-container">
+        <div id="viewer"></div>
+    </div>
+    
     <div id="overlay" class="overlay" onclick="closeAllPanels()"></div>
 
     <!-- Всплывающая кнопка при выделении текста -->
@@ -352,7 +396,7 @@
         <button class="btn-icon" onclick="openDrawer('quotes')">”</button>
     </div>
 
-    <!-- Нижний Футер -->
+    <!-- Нижний Футер (Главное меню) -->
     <div id="footer" class="ui-panel footer">
         <div class="progress-row">
             <span id="chapter-title">Глава</span>
@@ -363,12 +407,18 @@
             <button class="btn-icon" onclick="openDrawer('toc')">📖</button>
             <button class="btn-icon" onclick="openDrawer('quotes')">”</button>
             <button class="btn-icon" style="color: var(--accent);" onclick="setBookmark()">🔖</button>
-            <button class="btn-icon" onclick="toggleSettings()">Aa</button>
+            <button class="btn-icon" onclick="openSettingsSheet()">Aa</button>
         </div>
     </div>
 
-    <!-- Меню настроек шрифта и оформления -->
+    <!-- Меню настроек шрифта и оформления с возвратом назад -->
     <div id="settings-sheet" class="settings-sheet">
+        <div class="settings-header">
+            <button class="btn-back" onclick="backToMainMenu()">← Меню</button>
+            <span>Настройки оформления</span>
+            <button class="btn-icon" style="font-size: 16px; padding: 0;" onclick="closeAllPanels()">✕</button>
+        </div>
+
         <div class="theme-buttons">
             <button class="theme-btn theme-white" onclick="applyTheme('white')">Белый</button>
             <button class="theme-btn theme-sepia" onclick="applyTheme('sepia')">Сепия</button>
@@ -386,7 +436,7 @@
         </div>
 
         <div class="settings-row">
-            <span style="font-size: 14px;">Размер</span>
+            <span style="font-size: 14px;">Размер текста</span>
             <div style="display: flex; gap: 10px;">
                 <button class="stepper-btn" onclick="changeFontSize(-1)">−</button>
                 <button class="stepper-btn" onclick="changeFontSize(1)">+</button>
@@ -421,6 +471,7 @@
 
         const BOOK_URL = "infinity_jest.epub";
         const book = ePub(BOOK_URL);
+        const viewerEl = document.getElementById("viewer");
         const rendition = book.renderTo("viewer", {
             width: "100%",
             height: "100%",
@@ -433,7 +484,7 @@
         let lastReadLocation = localStorage.getItem("book_last_location");
         let uiVisible = false;
 
-        let activeSelection = null; // Буфер для выделенной цитаты
+        let activeSelection = null;
 
         const fonts = {
             system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -442,10 +493,10 @@
         };
 
         const themes = {
-            white: { bg: "#ffffff", text: "#111111", ui: "rgba(245, 245, 247, 0.95)" },
-            sepia: { bg: "#f4ecd8", text: "#5b4636", ui: "rgba(238, 228, 206, 0.95)" },
-            gray:  { bg: "#2c2c2e", text: "#e5e5e7", ui: "rgba(44, 44, 46, 0.95)" },
-            black: { bg: "#000000", text: "#a1a1a6", ui: "rgba(20, 20, 22, 0.95)" }
+            white: { bg: "#ffffff", text: "#111111", ui: "rgba(245, 245, 247, 0.96)" },
+            sepia: { bg: "#f4ecd8", text: "#5b4636", ui: "rgba(238, 228, 206, 0.96)" },
+            gray:  { bg: "#2c2c2e", text: "#e5e5e7", ui: "rgba(44, 44, 46, 0.96)" },
+            black: { bg: "#000000", text: "#a1a1a6", ui: "rgba(20, 20, 22, 0.96)" }
         };
 
         function registerThemes() {
@@ -473,7 +524,7 @@
         applyTheme(savedTheme, false);
         rendition.display(lastReadLocation || undefined);
 
-        // --- МЕТАДАННЫЕ И ОГЛАВЛЕНИЕ ---
+        // Метаданные и навигация
         book.loaded.metadata.then(meta => {
             document.getElementById("book-title").innerText = meta.title || "Книга";
             document.getElementById("book-author").innerText = meta.creator || "";
@@ -517,57 +568,98 @@
             rendition.display(cfi);
         });
 
-        // --- ГАРАНТИРОВАННАЯ ОБРАБОТКА ТАПОВ И ВЫДЕЛЕНИЙ НА КАЖДОЙ СТРАНИЦЕ ---
+        // ==========================================
+        // ПЛАВНЫЙ СВАЙП И ДВОЙНОЙ ТАП НА КАЖДОЙ СТРАНИЦЕ
+        // ==========================================
+        let lastTapTime = 0;
+
         rendition.on("rendered", (section, view) => {
             const frameDoc = view.document;
             if (!frameDoc) return;
 
-            let touchStartX = 0;
-            let touchStartY = 0;
-            let touchStartTime = 0;
+            let startX = 0;
+            let startY = 0;
+            let currentX = 0;
+            let isSwiping = false;
 
             frameDoc.addEventListener("touchstart", (e) => {
-                touchStartX = e.changedTouches[0].clientX;
-                touchStartY = e.changedTouches[0].clientY;
-                touchStartTime = Date.now();
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                currentX = startX;
+                isSwiping = false;
+                viewerEl.classList.add("dragging");
+            }, { passive: true });
+
+            frameDoc.addEventListener("touchmove", (e) => {
+                currentX = e.touches[0].clientX;
+                const diffX = currentX - startX;
+                const diffY = e.touches[0].clientY - startY;
+
+                // Если движение строго горизонтальное — сдвигаем страницу за пальцем
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                    isSwiping = true;
+                    // Легкое сопротивление сдвигу
+                    viewerEl.style.transform = `translateX(${diffX * 0.75}px)`;
+                }
             }, { passive: true });
 
             frameDoc.addEventListener("touchend", (e) => {
-                // Если сейчас выделен текст, не перелистываем и не дергаем меню
-                const selection = frameDoc.getSelection();
-                if (selection && selection.toString().trim().length > 0) return;
+                viewerEl.classList.remove("dragging");
+                const diffX = currentX - startX;
+                const totalDiff = Math.abs(diffX);
 
-                const diffX = e.changedTouches[0].clientX - touchStartX;
-                const diffY = e.changedTouches[0].clientY - touchStartY;
-                const timeDiff = Date.now() - touchStartTime;
-
-                // Свайпы листания
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+                // Если был свайп (тянули более чем на 60px)
+                if (isSwiping && totalDiff > 60) {
+                    if (diffX < 0) {
+                        // Анимация улета влево -> следующая страница
+                        viewerEl.style.transform = `translateX(-100vw)`;
+                        setTimeout(() => {
+                            rendition.next();
+                            viewerEl.style.transform = "translateX(0)";
+                        }, 200);
+                    } else {
+                        // Анимация улета вправо -> предыдущая страница
+                        viewerEl.style.transform = `translateX(100vw)`;
+                        setTimeout(() => {
+                            rendition.prev();
+                            viewerEl.style.transform = "translateX(0)";
+                        }, 200);
+                    }
                     hideSelectionTooltip();
-                    if (diffX < 0) rendition.next();
-                    else rendition.prev();
                     return;
                 }
 
-                // Одиночный тап без смещения
-                if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10 && timeDiff < 300) {
-                    hideSelectionTooltip();
-                    const width = window.innerWidth;
-                    const x = e.changedTouches[0].clientX;
+                // Возвращаем страницу назад, если сдвиг был недостаточен
+                viewerEl.style.transform = "translateX(0)";
 
-                    if (x < width * 0.3) {
-                        rendition.prev();
-                    } else if (x > width * 0.7) {
-                        rendition.next();
-                    } else {
-                        // Тап строго по центру открывает/скрывает панели на любой странице
+                // Проверяем одиночные и двойные тапы
+                const selection = frameDoc.getSelection();
+                if (selection && selection.toString().trim().length > 0) return;
+
+                if (!isSwiping && totalDiff < 10) {
+                    const now = Date.now();
+                    const width = window.innerWidth;
+                    const tapX = startX;
+
+                    // ДВОЙНОЙ ТАП (интервал меньше 320мс) по центру экрана (30%-70%)
+                    if (now - lastTapTime < 320 && tapX > width * 0.3 && tapX < width * 0.7) {
                         togglePanels();
+                        lastTapTime = 0;
+                        return;
+                    }
+                    lastTapTime = now;
+
+                    // Одиночный тап по краям листает
+                    if (tapX < width * 0.3) {
+                        rendition.prev();
+                    } else if (tapX > width * 0.7) {
+                        rendition.next();
                     }
                 }
             }, { passive: true });
         });
 
-        // --- МЕХАНИЗМ ВЫДЕЛЕНИЯ И ЦИТАТ ---
+        // --- МЕХАНИЗМ ЦИТАТ И ПЕРЕХОД К НИМ ---
         rendition.on("selected", (cfiRange, contents) => {
             book.getRange(cfiRange).then(range => {
                 if (!range) return;
@@ -579,7 +671,6 @@
                     text: text
                 };
 
-                // Координаты для тултипа
                 const rect = range.getBoundingClientRect();
                 const tooltip = document.getElementById("selection-tooltip");
                 tooltip.style.left = `${Math.min(window.innerWidth - 80, Math.max(80, rect.left + rect.width / 2))}px`;
@@ -603,9 +694,12 @@
             });
             localStorage.setItem("book_quotes", JSON.stringify(quotes));
 
+            // Подсвечиваем цитату желтым прямо в тексте
+            rendition.annotations.highlight(activeSelection.cfi, {}, () => {}, "highlight-quote", { fill: "yellow" });
+
             hideSelectionTooltip();
             if (tg) tg.HapticFeedback?.notificationOccurred("success");
-            alert("💬 Цитата добавлена!");
+            alert("💬 Цитата сохранена!");
         }
 
         function renderQuotesList() {
@@ -618,13 +712,14 @@
                 return;
             }
 
-            quotes.forEach((q, idx) => {
+            quotes.forEach((q) => {
                 const li = document.createElement("li");
                 li.className = "quote-item";
                 li.innerHTML = `
                     <div style="font-size: 13px; line-height: 1.4;">«${q.text}»</div>
                     <div class="quote-date">${q.date}</div>
                 `;
+                // Клик по цитате перемещает к тексту книги
                 li.onclick = () => {
                     rendition.display(q.cfi);
                     closeAllPanels();
@@ -633,7 +728,7 @@
             });
         }
 
-        // --- УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ---
+        // --- УПРАВЛЕНИЕ МЕНЮ И НАСТРОЙКАМИ ---
         function togglePanels() {
             uiVisible = !uiVisible;
             document.getElementById("header").classList.toggle("visible", uiVisible);
@@ -655,6 +750,18 @@
             hideSelectionTooltip();
         }
 
+        function openSettingsSheet() {
+            // Скрываем футер и открываем лист настроек
+            document.getElementById("footer").classList.remove("visible");
+            document.getElementById("settings-sheet").classList.add("visible");
+        }
+
+        function backToMainMenu() {
+            // Возврат из настроек обратно к футеру
+            document.getElementById("settings-sheet").classList.remove("visible");
+            document.getElementById("footer").classList.add("visible");
+        }
+
         function openDrawer(type) {
             closeAllPanels();
             if (type === 'toc') {
@@ -664,10 +771,6 @@
                 document.getElementById("quotes-drawer").classList.add("visible");
             }
             document.getElementById("overlay").classList.add("visible");
-        }
-
-        function toggleSettings() {
-            document.getElementById("settings-sheet").classList.toggle("visible");
         }
 
         function applyTheme(name, save = true) {
