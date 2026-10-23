@@ -6,17 +6,39 @@
     <title>Читалка</title>
     <!-- Telegram Web App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- JSZip и epub.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <!-- JSZip и epub.js (версии зафиксированы, чтобы обновление CDN ничего не сломало) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
     <style>
+        /* Значения переменных перезаписываются из JS при смене темы */
         :root {
-            --bg-color: #000000;
-            --text-color: #ffffff;
-            --ui-bg: rgba(0, 0, 0, 0.8);
-            --ui-border: rgba(255, 255, 255, 0.08);
-            --accent: #07C980;
-            --sub-text: rgba(161, 161, 161, 0.5);
+            --page-bg: #000000;
+            --page-text: #FFFFFF;
+
+            /* Хэдер / футер / настройки: 000000 или FFFFFF, 80% */
+            --panel-bg: rgba(0, 0, 0, 0.8);
+            --panel-fg: #D7C9B0;                       /* шрифт и иконки */
+            --panel-sub: rgba(161, 161, 161, 0.5);     /* доп. шрифт A1A1A1 50% */
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --track: rgba(161, 161, 161, 0.3);
+
+            /* Шторки */
+            --sheet-bg: rgba(0, 0, 0, 0.94);
+            --sheet-text: #F2F2F2;
+            --chip-bg: rgba(255, 255, 255, 0.06);
+
+            /* Плашка выделения: 000000 или D7C9B0, 80% */
+            --pill-bg: rgba(0, 0, 0, 0.8);
+            --pill-fg: #D7C9B0;
+
+            --overlay-dim: rgba(0, 0, 0, 0.55);
+
+            --red: #FF3B30;
+            --quote: #07C980;
+            --note: #F2C94C;
+
+            --blur: blur(2px);
+            --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
         }
 
         * {
@@ -30,85 +52,110 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: var(--bg-color);
-            color: var(--text-color);
+            background-color: var(--page-bg);
+            color: var(--page-text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             user-select: none;
             -webkit-user-select: none;
         }
 
+        button { font-family: inherit; }
+
         #viewer-container {
-            width: 100vw;
-            height: 100vh;
+            position: fixed;
+            inset: 0;
             overflow: hidden;
-            position: relative;
+            background: var(--page-bg);
         }
 
         #viewer {
             width: 100%;
             height: 100%;
-            transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
             will-change: transform;
         }
 
-        #viewer.dragging {
-            transition: none;
+        #viewer.dragging { transition: none; }
+
+        /* ---------- ИКОНКИ (SVG через маску, цвет = currentColor) ---------- */
+        .icon {
+            display: block;
+            width: 24px;
+            height: 24px;
+            background-color: currentColor;
+            -webkit-mask: var(--icon) center / contain no-repeat;
+            mask: var(--icon) center / contain no-repeat;
+            pointer-events: none;
+        }
+        .i-notes    { --icon: url("icons/notes.svg"); }
+        .i-quote    { --icon: url("icons/qoute.svg"); }
+        .i-fonts    { --icon: url("icons/fonts.svg"); }
+        .i-bookmark { --icon: url("icons/bookmark_black.svg"); }
+        .i-bmlist   { --icon: url("icons/list_of_bookmarks.svg"); }
+        .i-copy     { --icon: url("icons/copy.svg"); }
+        .i-share    { --icon: url("icons/forward.svg"); }
+
+        #btn-bookmark.on { color: var(--red); }
+        #btn-bookmark.on .icon { --icon: url("icons/bookmark_red.svg"); }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 6px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--panel-fg);
+            flex-shrink: 0;
         }
 
-        /* --- ХЕДЕР И ФУТЕР --- */
-        .ui-panel {
+        /* ---------- ХЕДЕР И ФУТЕР ---------- */
+        .panel {
             position: fixed;
             left: 0;
             width: 100%;
-            background: var(--ui-bg);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: var(--panel-bg);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            color: var(--panel-fg);
             z-index: 100;
+            opacity: 0;
+            pointer-events: none;
             transition: transform 0.25s ease, opacity 0.25s ease;
-            box-sizing: border-box;
         }
 
-        .header {
-            top: 0;
-            padding: 12px 18px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid var(--ui-border);
-            border-radius: 0 0 5px 5px;
-            transform: translateY(-100%);
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .footer {
-            bottom: 0;
-            padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            border-top: 1px solid var(--ui-border);
-            border-radius: 5px 5px 0 0;
-            transform: translateY(100%);
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .header.visible, .footer.visible {
+        .panel.visible {
             transform: translateY(0);
             opacity: 1;
             pointer-events: auto;
         }
 
+        .header {
+            top: 0;
+            padding: 6px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--panel-border);
+            border-radius: 0 0 5px 5px;
+            transform: translateY(-100%);
+        }
+
         .header-title-box {
+            flex: 1;
+            min-width: 0;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
-            padding: 0 10px;
+            align-items: center;
+            padding: 0 8px;
             text-align: center;
         }
 
         .header-title {
+            max-width: 100%;
             font-size: 14px;
             font-weight: 600;
             white-space: nowrap;
@@ -117,185 +164,222 @@
         }
 
         .header-author {
+            max-width: 100%;
             font-size: 11px;
-            color: var(--sub-text);
+            color: var(--panel-sub);
             margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .footer {
+            bottom: 0;
+            padding: 12px 20px calc(8px + var(--safe-bottom));
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-top: 1px solid var(--panel-border);
+            border-radius: 5px 5px 0 0;
+            transform: translateY(100%);
         }
 
         .progress-row {
             display: flex;
             justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
             font-size: 12px;
-            color: var(--sub-text);
+        }
+
+        .chapter-title {
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            color: var(--panel-fg);
+        }
+
+        #chapter-pages-left {
+            flex-shrink: 0;
+            color: var(--panel-sub);
         }
 
         .progress-slider {
-            width: 100%;
             -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 22px;
+            margin: 0;
+            background: transparent;
+            outline: none;
+            --fill: 0%;
+        }
+        .progress-slider::-webkit-slider-runnable-track {
             height: 3px;
             border-radius: 2px;
-            background: rgba(161, 161, 161, 0.2);
-            outline: none;
+            background: linear-gradient(to right, var(--panel-fg) var(--fill), var(--track) var(--fill));
         }
-
         .progress-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 12px;
-            height: 12px;
+            width: 14px;
+            height: 14px;
+            margin-top: -5.5px;
             border-radius: 50%;
-            background: var(--accent);
+            border: none;
+            background: var(--panel-fg);
             cursor: pointer;
+        }
+        .progress-slider::-moz-range-track {
+            height: 3px;
+            border-radius: 2px;
+            background: linear-gradient(to right, var(--panel-fg) var(--fill), var(--track) var(--fill));
+        }
+        .progress-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: none;
+            background: var(--panel-fg);
+        }
+        .progress-slider:disabled { opacity: 0.5; }
+
+        .book-percent {
+            text-align: center;
+            font-size: 11px;
+            color: var(--panel-sub);
+            margin-top: -4px;
         }
 
         .footer-tools {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-top: 4px;
+            padding: 4px 4px 0;
         }
 
-        .btn-icon {
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: inherit;
-        }
-
-        .btn-icon img {
-            width: 24px;
-            height: 24px;
-            display: block;
-            pointer-events: none;
-        }
-
-        /* --- ПЛАШКА ВЫДЕЛЕНИЯ ТЕКСТА --- */
+        /* ---------- ПЛАШКА ВЫДЕЛЕНИЯ ---------- */
         .selection-toolbar {
             position: fixed;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(215, 201, 128, 0.3);
-            border-radius: 5px;
-            padding: 6px 12px;
+            left: 0;
+            top: 0;
             display: none;
             gap: 14px;
             align-items: center;
+            padding: 6px 12px;
+            border-radius: 5px;
+            background: var(--pill-bg);
+            color: var(--pill-fg);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
             z-index: 250;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
-            transform: translate(-50%, -120%);
         }
+        .selection-toolbar.visible { display: flex; }
 
-        .toolbar-btn {
+        .tb-btn {
             background: none;
             border: none;
-            color: #D7C980;
+            color: inherit;
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 3px;
-            cursor: pointer;
-            padding: 4px;
+            padding: 4px 2px;
             font-size: 10px;
+            font-weight: 500;
+            cursor: pointer;
         }
+        .tb-btn .icon { width: 20px; height: 20px; }
 
-        .toolbar-btn img {
-            width: 20px;
-            height: 20px;
-            pointer-events: none;
-        }
-
-        /* --- ПАНЕЛЬ НАСТРОЙКИ (ШРИФТ И ТЕМЫ) --- */
-        .settings-sheet {
+        /* ---------- НИЖНИЕ ЛИСТЫ (настройки, заметка) ---------- */
+        .sheet {
             position: fixed;
             bottom: 0;
             left: 0;
             width: 100%;
-            background: var(--ui-bg);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            border-top: 1px solid var(--ui-border);
+            background: var(--panel-bg);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            color: var(--panel-fg);
+            border-top: 1px solid var(--panel-border);
             border-radius: 5px 5px 0 0;
-            padding: 16px 20px calc(18px + env(safe-area-inset-bottom));
+            padding: 14px 20px calc(18px + var(--safe-bottom));
             display: flex;
             flex-direction: column;
-            gap: 16px;
-            z-index: 110;
-            transform: translateY(100%);
+            gap: 14px;
+            z-index: 130;
+            transform: translateY(105%);
             transition: transform 0.25s ease;
         }
+        .sheet.visible { transform: translateY(0); }
+        #note-sheet { background: var(--sheet-bg); }
 
-        .settings-sheet.visible {
-            transform: translateY(0);
-        }
-
-        .settings-header {
+        .sheet-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 14px;
             font-weight: 600;
-            border-bottom: 1px solid var(--ui-border);
-            padding-bottom: 10px;
+            border-bottom: 1px solid var(--panel-border);
+            padding-bottom: 8px;
         }
+        .sheet-header .btn-icon { width: 32px; height: 32px; font-size: 16px; }
 
         .theme-buttons {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 6px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
         }
 
         .theme-btn {
-            border: 1px solid var(--ui-border);
+            border: 1px solid transparent;
             border-radius: 5px;
-            padding: 8px 0;
-            font-size: 11px;
-            cursor: pointer;
+            padding: 9px 0;
+            font-size: 12px;
             font-weight: 500;
-            text-align: center;
+            cursor: pointer;
+            outline: 2px solid transparent;
+            outline-offset: 1px;
         }
-
-        .theme-white { background: #ffffff; color: #111; }
-        .theme-sepia { background: #f4ecd8; color: #5b4636; }
-        .theme-gray  { background: #333336; color: #eee; }
-        .theme-black { background: #000000; color: #aaa; border-color: #333; }
-        .theme-system { background: rgba(255,255,255,0.1); color: inherit; }
+        .theme-btn.active { outline-color: var(--panel-fg); }
+        .theme-white { background: #FFFFFF; color: #111111; border-color: rgba(0,0,0,0.12); }
+        .theme-sepia { background: #F4ECD8; color: #5B4636; border-color: rgba(91,70,54,0.15); }
+        .theme-gray  { background: #2C2C2E; color: #E5E5E7; border-color: rgba(255,255,255,0.1); }
+        .theme-black { background: #000000; color: #D7C9B0; border-color: rgba(255,255,255,0.18); }
 
         .settings-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(255, 255, 255, 0.04);
-            padding: 8px 14px;
+            gap: 10px;
+            background: var(--chip-bg);
+            padding: 8px 12px;
             border-radius: 5px;
+            font-size: 13px;
         }
 
-        .font-chips {
-            display: flex;
-            gap: 6px;
-        }
+        .font-chips { display: flex; gap: 6px; }
 
         .font-chip {
-            background: rgba(255, 255, 255, 0.08);
-            color: inherit;
+            background: var(--chip-bg);
+            color: var(--panel-sub);
             border: 1px solid transparent;
             border-radius: 5px;
             padding: 6px 10px;
             font-size: 12px;
             cursor: pointer;
         }
+        .font-chip.active { border-color: var(--panel-fg); color: var(--panel-fg); }
+        #font-serif { font-family: Georgia, "Times New Roman", serif; }
+        #font-mono  { font-family: Menlo, Monaco, Consolas, monospace; }
 
-        .font-chip.active {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
+        .stepper { display: flex; align-items: center; gap: 10px; }
+        .stepper-value { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
 
         .stepper-btn {
-            background: rgba(255, 255, 255, 0.08);
-            color: inherit;
+            background: var(--chip-bg);
+            color: var(--panel-fg);
             border: none;
             border-radius: 5px;
             width: 34px;
@@ -304,7 +388,46 @@
             cursor: pointer;
         }
 
-        /* --- БОКОВЫЕ ШТОРКИ --- */
+        .note-excerpt {
+            font-size: 13px;
+            line-height: 1.45;
+            color: var(--sheet-text);
+            border-left: 3px solid var(--note);
+            padding: 2px 0 2px 10px;
+            max-height: 90px;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+        }
+
+        #note-input {
+            width: 100%;
+            min-height: 90px;
+            resize: none;
+            border-radius: 5px;
+            border: 1px solid var(--panel-border);
+            background: var(--chip-bg);
+            color: var(--sheet-text);
+            padding: 10px;
+            font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            outline: none;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        .primary-btn {
+            border: none;
+            border-radius: 5px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--panel-fg);
+            color: var(--page-bg);
+            cursor: pointer;
+        }
+
+        /* ---------- БОКОВЫЕ ШТОРКИ ---------- */
         .drawer {
             position: fixed;
             top: 0;
@@ -312,34 +435,32 @@
             width: 85%;
             max-width: 340px;
             height: 100%;
-            background: var(--ui-bg);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            border-right: 1px solid var(--ui-border);
+            background: var(--sheet-bg);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            color: var(--sheet-text);
+            border-right: 1px solid var(--panel-border);
             z-index: 120;
-            transform: translateX(-100%);
+            transform: translateX(-102%);
             transition: transform 0.25s ease;
             display: flex;
             flex-direction: column;
         }
-
         .drawer.right-side {
             left: auto;
             right: 0;
             border-right: none;
-            border-left: 1px solid var(--ui-border);
-            transform: translateX(100%);
+            border-left: 1px solid var(--panel-border);
+            transform: translateX(102%);
         }
-
-        .drawer.visible {
-            transform: translateX(0);
-        }
+        .drawer.visible { transform: translateX(0); }
 
         .drawer-header {
-            padding: 16px 18px;
+            padding: 10px 10px 10px 18px;
             font-size: 15px;
             font-weight: 600;
-            border-bottom: 1px solid var(--ui-border);
+            color: var(--panel-fg);
+            border-bottom: 1px solid var(--panel-border);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -348,52 +469,104 @@
         .drawer-list {
             flex: 1;
             overflow-y: auto;
-            padding: 10px 0;
+            -webkit-overflow-scrolling: touch;
+            padding: 8px 0 calc(16px + var(--safe-bottom));
             list-style: none;
             margin: 0;
         }
 
-        .drawer-item {
-            padding: 14px 18px;
+        .toc-item {
+            padding: 13px 18px;
             font-size: 14px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            line-height: 1.35;
+            border-bottom: 1px solid var(--panel-border);
             cursor: pointer;
         }
+        .toc-item.active { color: var(--panel-fg); font-weight: 600; }
 
-        .card-item {
+        .card {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 6px;
             margin: 8px 14px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 4px;
-            padding: 10px;
+            background: var(--chip-bg);
+            border-radius: 5px;
+            padding: 10px 36px 10px 12px;
+            cursor: pointer;
+        }
+        .card-quotes    { border-left: 3px solid var(--quote); }
+        .card-notes     { border-left: 3px solid var(--note); }
+        .card-bookmarks { border-left: 3px solid var(--red); }
+
+        .card-text {
+            font-size: 13px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 5;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card-comment {
+            font-size: 13px;
+            line-height: 1.4;
+            color: var(--panel-fg);
+            white-space: pre-wrap;
+        }
+        .card-meta { font-size: 11px; color: var(--panel-sub); }
+
+        .card-del {
+            position: absolute;
+            top: 6px;
+            right: 4px;
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: none;
+            color: var(--panel-sub);
+            font-size: 14px;
             cursor: pointer;
         }
 
-        .card-item.type-quote { border-left: 3px solid var(--accent); }
-        .card-item.type-note { border-left: 3px solid #D7C980; }
-        .card-item.type-bookmark { border-left: 3px solid #ff4b4b; }
-
-        .card-date {
-            font-size: 11px;
-            color: var(--sub-text);
+        .empty-state {
+            padding: 28px 22px;
+            text-align: center;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--panel-sub);
+            white-space: pre-line;
         }
 
+        /* ---------- ОВЕРЛЕЙ И ТОСТ ---------- */
         .overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.6);
+            inset: 0;
+            background: transparent;
             z-index: 90;
             display: none;
         }
+        .overlay.visible { display: block; }
+        .overlay.dim { background: var(--overlay-dim); z-index: 115; }
 
-        .overlay.visible {
-            display: block;
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: calc(40px + var(--safe-bottom));
+            transform: translate(-50%, 20px);
+            background: var(--pill-bg);
+            color: var(--pill-fg);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border-radius: 5px;
+            padding: 8px 14px;
+            font-size: 13px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 300;
+            white-space: nowrap;
         }
+        .toast.visible { opacity: 1; transform: translate(-50%, 0); }
     </style>
 </head>
 <body>
@@ -401,535 +574,1075 @@
         <div id="viewer"></div>
     </div>
 
-    <div id="overlay" class="overlay" onclick="closeAllPanels()"></div>
+    <div id="overlay" class="overlay"></div>
 
-    <!-- Всплывающая панель выделения текста с вашими SVG-иконками -->
-    <div id="selection-toolbar" class="selection-toolbar">
-        <button class="toolbar-btn" onclick="saveSelection('note')">
-            <img src="icons/notes.svg" alt="Заметка">
-            Заметка
-        </button>
-        <button class="toolbar-btn" style="color: var(--accent);" onclick="saveSelection('quote')">
-            <img src="icons/qoute.svg" alt="Цитата">
-            Цитата
-        </button>
-        <button class="toolbar-btn" onclick="copySelectionText()">
-            <img src="icons/copy.svg" alt="Копировать">
-            Копировать
-        </button>
-        <button class="toolbar-btn" onclick="shareSelectionText()">
-            <img src="icons/forward.svg" alt="Поделиться">
-            Поделиться
-        </button>
+    <!-- Плашка при выделении текста -->
+    <div id="selection-toolbar" class="selection-toolbar" role="toolbar">
+        <button class="tb-btn" data-act="note"><span class="icon i-notes"></span><span>Заметка</span></button>
+        <button class="tb-btn" data-act="quote"><span class="icon i-quote"></span><span>Цитата</span></button>
+        <button class="tb-btn" data-act="copy"><span class="icon i-copy"></span><span>Копировать</span></button>
+        <button class="tb-btn" data-act="share"><span class="icon i-share"></span><span>Поделиться</span></button>
     </div>
 
-    <!-- Верхний Хедер -->
-    <div id="header" class="ui-panel header">
-        <button class="btn-icon" onclick="openDrawer('toc')">
-            <svg style="width:24px;height:24px;fill:currentColor" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    <!-- Хэдер: оглавление | название | список закладок -->
+    <header id="header" class="panel header">
+        <button class="btn-icon" id="btn-toc" aria-label="Содержание">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
         </button>
         <div class="header-title-box">
-            <span id="book-title" class="header-title">Загрузка...</span>
-            <span id="book-author" class="header-author">...</span>
+            <span id="book-title" class="header-title">Загрузка…</span>
+            <span id="book-author" class="header-author"></span>
         </div>
-        <!-- Кнопка списка всех закладок -->
-        <button class="btn-icon" onclick="openDrawer('bookmarks')">
-            <img src="icons/list_of_bookmarks.svg" alt="Список закладок">
+        <button class="btn-icon" id="btn-bookmarks" aria-label="Список закладок">
+            <span class="icon i-bmlist"></span>
         </button>
-    </div>
+    </header>
 
-    <!-- Нижний Футер -->
-    <div id="footer" class="ui-panel footer">
+    <!-- Футер -->
+    <footer id="footer" class="panel footer">
         <div class="progress-row">
-            <span id="chapter-title">Глава: ...</span>
-            <span id="chapter-pages-left">еще ... стр.</span>
+            <span id="chapter-title" class="chapter-title">Глава: …</span>
+            <span id="chapter-pages-left"></span>
         </div>
-        <input type="range" id="progress-slider" class="progress-slider" min="0" max="100" value="0">
+        <input type="range" id="progress-slider" class="progress-slider" min="0" max="1000" step="1" value="0" disabled>
+        <div id="book-percent" class="book-percent">Считаем страницы…</div>
         <div class="footer-tools">
-            <!-- 1. Заметки -->
-            <button class="btn-icon" onclick="openDrawer('notes')" title="Заметки">
-                <img src="icons/notes.svg" alt="Заметки">
-            </button>
-            <!-- 2. Цитаты -->
-            <button class="btn-icon" onclick="openDrawer('quotes')" title="Цитаты">
-                <img src="icons/qoute.svg" alt="Цитаты">
-            </button>
-            <!-- 3. Шрифты -->
-            <button class="btn-icon" onclick="openSettingsSheet()" title="Шрифты">
-                <img src="icons/fonts.svg" alt="Шрифты">
-            </button>
-            <!-- 4. Закладка (динамическое переключение black / red) -->
-            <button id="btn-bookmark" class="btn-icon" onclick="toggleCurrentBookmark()" title="Закладка">
-                <img id="bookmark-icon-img" src="icons/bookmark_black.svg" alt="Закладка">
-            </button>
+            <button class="btn-icon" id="btn-notes" aria-label="Заметки"><span class="icon i-notes"></span></button>
+            <button class="btn-icon" id="btn-quotes" aria-label="Цитаты"><span class="icon i-quote"></span></button>
+            <button class="btn-icon" id="btn-fonts" aria-label="Шрифты"><span class="icon i-fonts"></span></button>
+            <button class="btn-icon" id="btn-bookmark" aria-label="Закладка"><span class="icon i-bookmark"></span></button>
         </div>
-    </div>
+    </footer>
 
-    <!-- Панель настроек оформления -->
-    <div id="settings-sheet" class="settings-sheet">
-        <div class="settings-header">
+    <!-- Настройки отображения -->
+    <div id="settings-sheet" class="sheet">
+        <div class="sheet-header">
             <span>Настройки отображения</span>
-            <button class="btn-icon" style="font-size: 16px; padding: 0;" onclick="closeAllPanels()">✕</button>
+            <button class="btn-icon" id="btn-settings-close" aria-label="Закрыть">✕</button>
         </div>
-
         <div class="theme-buttons">
-            <button class="theme-btn theme-white" onclick="applyTheme('white')">Белый</button>
-            <button class="theme-btn theme-sepia" onclick="applyTheme('sepia')">Сепия</button>
-            <button class="theme-btn theme-gray" onclick="applyTheme('gray')">Серый</button>
-            <button class="theme-btn theme-black" onclick="applyTheme('black')">Черный</button>
-            <button class="theme-btn theme-system" onclick="applyTheme('system')">Как в системе</button>
+            <button class="theme-btn theme-white" data-theme="white">Белый</button>
+            <button class="theme-btn theme-sepia" data-theme="sepia">Сепия</button>
+            <button class="theme-btn theme-gray"  data-theme="gray">Серый</button>
+            <button class="theme-btn theme-black" data-theme="black">Черный</button>
         </div>
-
         <div class="settings-row">
-            <span style="font-size: 13px;">Шрифт</span>
+            <span>Шрифт</span>
             <div class="font-chips">
-                <button class="font-chip active" id="font-system" onclick="changeFontFamily('system')">Системный</button>
-                <button class="font-chip" id="font-serif" onclick="changeFontFamily('serif')">Serif</button>
-                <button class="font-chip" id="font-mono" onclick="changeFontFamily('mono')">Mono</button>
+                <button class="font-chip" id="font-system" data-font="system">Системный</button>
+                <button class="font-chip" id="font-serif" data-font="serif">Serif</button>
+                <button class="font-chip" id="font-mono" data-font="mono">Mono</button>
             </div>
         </div>
-
         <div class="settings-row">
-            <span style="font-size: 13px;">Размер текста</span>
-            <div style="display: flex; gap: 8px;">
-                <button class="stepper-btn" onclick="changeFontSize(-1)">−</button>
-                <button class="stepper-btn" onclick="changeFontSize(1)">+</button>
+            <span>Размер текста</span>
+            <div class="stepper">
+                <button class="stepper-btn" data-step="-1">−</button>
+                <span id="font-size-value" class="stepper-value">18</span>
+                <button class="stepper-btn" data-step="1">+</button>
             </div>
         </div>
     </div>
 
-    <!-- Шторка: Оглавление -->
-    <div id="toc-drawer" class="drawer">
-        <div class="drawer-header">
-            <span>Содержание</span>
-            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
+    <!-- Новая заметка -->
+    <div id="note-sheet" class="sheet">
+        <div class="sheet-header">
+            <span>Новая заметка</span>
+            <button class="btn-icon" id="btn-note-close" aria-label="Закрыть">✕</button>
         </div>
+        <div id="note-excerpt" class="note-excerpt"></div>
+        <textarea id="note-input" placeholder="Ваша мысль (необязательно)"></textarea>
+        <button class="primary-btn" id="btn-note-save">Сохранить заметку</button>
+    </div>
+
+    <!-- Шторки -->
+    <div id="toc-drawer" class="drawer">
+        <div class="drawer-header"><span>Содержание</span><button class="btn-icon" data-close>✕</button></div>
         <ul id="toc-list" class="drawer-list"></ul>
     </div>
-
-    <!-- Шторка: Закладки -->
     <div id="bookmarks-drawer" class="drawer right-side">
-        <div class="drawer-header">
-            <span>Закладки</span>
-            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
-        </div>
+        <div class="drawer-header"><span>Закладки</span><button class="btn-icon" data-close>✕</button></div>
         <ul id="bookmarks-list" class="drawer-list"></ul>
     </div>
-
-    <!-- Шторка: Заметки -->
     <div id="notes-drawer" class="drawer">
-        <div class="drawer-header">
-            <span>Мои заметки</span>
-            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
-        </div>
+        <div class="drawer-header"><span>Мои заметки</span><button class="btn-icon" data-close>✕</button></div>
         <ul id="notes-list" class="drawer-list"></ul>
     </div>
-
-    <!-- Шторка: Цитаты -->
     <div id="quotes-drawer" class="drawer right-side">
-        <div class="drawer-header">
-            <span>Мои цитаты</span>
-            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
-        </div>
+        <div class="drawer-header"><span>Мои цитаты</span><button class="btn-icon" data-close>✕</button></div>
         <ul id="quotes-list" class="drawer-list"></ul>
     </div>
 
+    <div id="toast" class="toast"></div>
+
     <script>
+    (() => {
+        "use strict";
+
+        // ==========================================
+        // НАСТРОЙКИ И ХРАНИЛИЩЕ
+        // ==========================================
         const tg = window.Telegram?.WebApp;
         if (tg) {
-            tg.ready();
-            tg.expand();
+            try { tg.ready(); tg.expand(); } catch (e) {}
+            try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
         }
 
         const BOOK_URL = "infinity_jest.epub";
-        const book = ePub(BOOK_URL);
-        const viewerEl = document.getElementById("viewer");
-        const rendition = book.renderTo("viewer", {
-            width: "100%",
-            height: "100%",
-            spread: "none"
-        });
+        const LOC_CHARS = 1000; // размер «локации» для расчёта процентов
+        const $ = (id) => document.getElementById(id);
+        const KEY = (k) => `reader:${BOOK_URL}:${k}`;
 
-        let currentFontSize = parseInt(localStorage.getItem("book_font_size")) || 18;
-        let currentFontFamily = localStorage.getItem("book_font_family") || "system";
-        let savedTheme = localStorage.getItem("book_theme") || "black";
-        let lastReadLocation = localStorage.getItem("book_last_location");
-        let uiVisible = false;
+        const store = {
+            get(k, def) {
+                try { const v = localStorage.getItem(KEY(k)); return v === null ? def : JSON.parse(v); }
+                catch (e) { return def; }
+            },
+            set(k, v) {
+                try { localStorage.setItem(KEY(k), JSON.stringify(v)); } catch (e) {}
+            }
+        };
 
-        let activeSelection = null;
+        // Перенос данных из старой версии (старые ключи localStorage)
+        (function migrate() {
+            try {
+                const raw = { book_last_location: "cfi", book_theme: "theme", book_font_family: "font", book_font_size: "size" };
+                const json = { book_quotes: "quotes", book_notes: "notes", book_bookmarks: "bookmarks" };
+                for (const [o, n] of Object.entries(raw)) {
+                    const v = localStorage.getItem(o);
+                    if (v !== null && localStorage.getItem(KEY(n)) === null) localStorage.setItem(KEY(n), JSON.stringify(v));
+                }
+                for (const [o, n] of Object.entries(json)) {
+                    const v = localStorage.getItem(o);
+                    if (v !== null && localStorage.getItem(KEY(n)) === null) localStorage.setItem(KEY(n), v);
+                }
+            } catch (e) {}
+        })();
 
-        const fonts = {
+        const FONTS = {
             system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
             serif: "Georgia, 'Times New Roman', serif",
             mono: "Menlo, Monaco, Consolas, monospace"
         };
 
-        const themes = {
-            white:  { bg: "#ffffff", text: "#000000", ui: "rgba(255, 255, 255, 0.85)", border: "rgba(0, 0, 0, 0.08)", accent: "#000000", sub: "rgba(0,0,0,0.5)" },
-            black:  { bg: "#000000", text: "#ffffff", ui: "rgba(0, 0, 0, 0.85)", border: "rgba(255, 255, 255, 0.08)", accent: "#07C980", sub: "rgba(161, 161, 161, 0.5)" },
-            sepia:  { bg: "#f4ecd8", text: "#5b4636", ui: "rgba(244, 236, 216, 0.88)", border: "rgba(91, 70, 54, 0.12)", accent: "#5b4636", sub: "rgba(91, 70, 54, 0.55)" },
-            gray:   { bg: "#2c2c2e", text: "#e5e5e7", ui: "rgba(35, 35, 38, 0.88)", border: "rgba(255, 255, 255, 0.08)", accent: "#07C980", sub: "rgba(161, 161, 161, 0.5)" }
+        // Два варианта оформления панелей из правок: тёмный (000000 + D7C9B0) и светлый (FFFFFF + 000000)
+        const PANEL = {
+            dark: {
+                "--panel-bg": "rgba(0, 0, 0, 0.8)",
+                "--panel-fg": "#D7C9B0",
+                "--panel-sub": "rgba(161, 161, 161, 0.5)",
+                "--panel-border": "rgba(255, 255, 255, 0.08)",
+                "--track": "rgba(161, 161, 161, 0.3)",
+                "--sheet-bg": "rgba(0, 0, 0, 0.94)",
+                "--sheet-text": "#F2F2F2",
+                "--chip-bg": "rgba(255, 255, 255, 0.06)",
+                "--pill-bg": "rgba(0, 0, 0, 0.8)",
+                "--pill-fg": "#D7C9B0",
+                "--overlay-dim": "rgba(0, 0, 0, 0.55)"
+            },
+            light: {
+                "--panel-bg": "rgba(255, 255, 255, 0.8)",
+                "--panel-fg": "#000000",
+                "--panel-sub": "#A1A1A1",
+                "--panel-border": "rgba(0, 0, 0, 0.08)",
+                "--track": "rgba(0, 0, 0, 0.15)",
+                "--sheet-bg": "rgba(255, 255, 255, 0.96)",
+                "--sheet-text": "#111111",
+                "--chip-bg": "rgba(0, 0, 0, 0.05)",
+                "--pill-bg": "rgba(215, 201, 176, 0.8)",
+                "--pill-fg": "#000000",
+                "--overlay-dim": "rgba(0, 0, 0, 0.3)"
+            }
         };
 
-        function registerThemes() {
-            for (let [name, t] of Object.entries(themes)) {
-                rendition.themes.register(name, {
-                    "body": {
-                        "background-color": `${t.bg} !important`,
-                        "color": `${t.text} !important`,
-                        "padding": "0 20px !important",
-                        "font-family": `${fonts[currentFontFamily]} !important`,
-                        "line-height": "1.6 !important"
-                    },
-                    "p, span, div, h1, h2, h3, h4, h5, h6": {
-                        "color": `${t.text} !important`,
-                        "font-family": `${fonts[currentFontFamily]} !important`
-                    }
-                });
-            }
+        // Сепия → светлые панели, серый → тёмные панели
+        const THEMES = {
+            white: { bg: "#FFFFFF", text: "#000000", mode: "light" },
+            sepia: { bg: "#F4ECD8", text: "#5B4636", mode: "light" },
+            gray:  { bg: "#2C2C2E", text: "#E5E5E7", mode: "dark" },
+            black: { bg: "#000000", text: "#FFFFFF", mode: "dark" }
+        };
+
+        const state = {
+            theme: store.get("theme", "black"),
+            font: store.get("font", "system"),
+            size: parseInt(store.get("size", 18), 10) || 18
+        };
+        if (!THEMES[state.theme]) state.theme = "black"; // в т.ч. бывшее «как в системе»
+        if (!FONTS[state.font]) state.font = "system";
+        state.size = Math.min(28, Math.max(14, state.size));
+
+        const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+        const norm = (a) => Array.isArray(a) ? a.filter(x => x && x.cfi).map(x => ({ ...x, id: x.id || uid() })) : [];
+
+        let bookmarks = norm(store.get("bookmarks", []));
+        let quotes = norm(store.get("quotes", []));
+        let notes = norm(store.get("notes", []));
+        const saveAll = () => {
+            store.set("bookmarks", bookmarks);
+            store.set("quotes", quotes);
+            store.set("notes", notes);
+        };
+
+        const nowLabel = () => new Date().toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        const haptic = (type = "success") => { try { tg?.HapticFeedback?.notificationOccurred(type); } catch (e) {} };
+
+        let toastTimer = null;
+        function toast(text) {
+            const t = $("toast");
+            t.textContent = text;
+            t.classList.add("visible");
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove("visible"), 1600);
         }
 
-        registerThemes();
-        applyTheme(savedTheme, false);
-        rendition.display(lastReadLocation || undefined);
+        // ==========================================
+        // КНИГА
+        // ==========================================
+        const viewerEl = $("viewer");
+        const book = ePub(BOOK_URL);
+        const rendition = book.renderTo("viewer", {
+            width: "100%",
+            height: "100%",
+            spread: "none",
+            flow: "paginated",
+            gap: 40
+        });
+        const CFI = new ePub.CFI();
+        const cmpCfi = (a, b) => { try { return CFI.compare(a, b); } catch (e) { return 0; } };
+
+        let lastLoc = null;
+        let locationsReady = false;
+        let locCount = {};
+        let toc = [];       // плоское оглавление
+        let chapters = [];  // оглавление, отсортированное по порядку в книге
+        let uiVisible = false;
+        let sliderDragging = false;
+
+        // ---------- Стили внутри книги ----------
+        function readerCss() {
+            const t = THEMES[state.theme];
+            return `
+                html, body { background: ${t.bg} !important; }
+                body {
+                    color: ${t.text} !important;
+                    font-family: ${FONTS[state.font]} !important;
+                    font-size: ${state.size}px !important;
+                    -webkit-user-select: text !important;
+                    user-select: text !important;
+                    -webkit-touch-callout: none !important;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                body p, body li, body blockquote, body div, body span, body a, body em, body strong,
+                body i, body b, body sup, body sub, body small, body td, body th,
+                body h1, body h2, body h3, body h4, body h5, body h6 {
+                    color: inherit !important;
+                    font-family: inherit !important;
+                    background-color: transparent !important;
+                }
+                body p, body li, body blockquote { line-height: 1.6 !important; }
+                a { text-decoration: none !important; }
+                img { max-width: 100% !important; height: auto !important; }
+                ::selection { background: rgba(7, 201, 128, 0.25); }
+            `;
+        }
+
+        function injectCss(contents) {
+            try {
+                const doc = contents.document;
+                let el = doc.getElementById("reader-style");
+                if (!el) {
+                    el = doc.createElement("style");
+                    el.id = "reader-style";
+                    (doc.head || doc.documentElement).appendChild(el);
+                }
+                el.textContent = readerCss();
+            } catch (e) {}
+        }
+
+        // ---------- Выделения (цитаты/заметки) ----------
+        function hlStyle(type) {
+            const dark = THEMES[state.theme].mode === "dark";
+            return {
+                "fill": type === "quote" ? "#07C980" : "#F2C94C",
+                "fill-opacity": dark ? "0.35" : "0.4",
+                "mix-blend-mode": dark ? "normal" : "multiply" // multiply на чёрном фоне делает подсветку невидимой
+            };
+        }
+        function addHl(item, type) {
+            try { rendition.annotations.highlight(item.cfi, { id: item.id, type }, () => {}, "hl-" + type, hlStyle(type)); } catch (e) {}
+        }
+        function removeHl(item) {
+            try { rendition.annotations.remove(item.cfi, "highlight"); } catch (e) {}
+        }
+        function refreshAllHighlights() {
+            quotes.forEach(removeHl);
+            notes.forEach(removeHl);
+            quotes.forEach(q => addHl(q, "quote"));
+            notes.forEach(n => addHl(n, "note"));
+            refreshMarks();
+        }
+        // Пересчитать положение подсветок после перекладки текста
+        function refreshMarks() {
+            try {
+                rendition.views().forEach(v => { try { v.pane && v.pane.render(); } catch (e) {} });
+            } catch (e) {}
+        }
+
+        rendition.hooks.content.register((contents) => {
+            injectCss(contents);
+            bindGestures(contents);
+        });
+
+        // Подсветки регистрируются один раз — epub.js сам рисует их при каждом рендере страницы
+        quotes.forEach(q => addHl(q, "quote"));
+        notes.forEach(n => addHl(n, "note"));
+
+        applyTheme(state.theme, false);
+        updateSettingsUI();
+
+        const startCfi = store.get("cfi", null);
+        rendition.display(startCfi || undefined).catch(() => rendition.display());
 
         book.loaded.metadata.then(meta => {
-            document.getElementById("book-title").innerText = meta.title || "Книга";
-            document.getElementById("book-author").innerText = meta.creator || "";
+            $("book-title").textContent = meta.title || "Книга";
+            $("book-author").textContent = meta.creator || "";
         });
 
-        book.loaded.navigation.then(nav => {
-            const list = document.getElementById("toc-list");
-            list.innerHTML = "";
-            nav.toc.forEach(chapter => {
-                const li = document.createElement("li");
-                li.className = "drawer-item";
-                li.innerText = chapter.label.trim();
-                li.onclick = () => {
-                    rendition.display(chapter.href);
-                    closeAllPanels();
-                };
-                list.appendChild(li);
+        // ---------- Оглавление ----------
+        const safeDecode = (s) => { try { return decodeURI(s); } catch (e) { return s; } };
+
+        function resolveSpine(path) {
+            if (!path) return -1;
+            const decoded = safeDecode(path);
+            for (const cand of [path, decoded]) {
+                try {
+                    const s = book.spine.get(cand);
+                    if (s && typeof s.index === "number") return s.index;
+                } catch (e) {}
+            }
+            const name = decoded.split("/").pop();
+            let found = -1;
+            book.spine.each(item => {
+                if (found < 0 && safeDecode(item.href).split("/").pop() === name) found = item.index;
             });
+            return found;
+        }
+
+        function flattenToc(items, depth) {
+            (items || []).forEach(it => {
+                const [path, anchor] = (it.href || "").split("#");
+                toc.push({
+                    label: (it.label || "").trim() || "Без названия",
+                    href: it.href,
+                    depth,
+                    spine: resolveSpine(path),
+                    anchor: anchor || null
+                });
+                if (it.subitems && it.subitems.length) flattenToc(it.subitems, depth + 1);
+            });
+        }
+
+        Promise.all([book.loaded.navigation, book.loaded.spine]).then(([nav]) => {
+            toc = [];
+            flattenToc(nav.toc, 0);
+            chapters = toc
+                .map((t, i) => ({ ...t, tocIndex: i }))
+                .filter(c => c.spine >= 0)
+                .sort((a, b) => a.spine - b.spine || a.tocIndex - b.tocIndex);
+            updateFooter();
         });
 
-        book.ready.then(() => book.locations.generate(1000)).then(() => updateProgress());
+        function contentsFor(spineIndex) {
+            try { return rendition.getContents().find(c => c.sectionIndex === spineIndex) || null; }
+            catch (e) { return null; }
+        }
 
-        rendition.on("relocated", location => {
-            const cfi = location.start.cfi;
-            localStorage.setItem("book_last_location", cfi);
-            updateProgress(location);
-            checkBookmarkState(cfi);
+        // Номер страницы (внутри раздела), на которой стоит якорь главы
+        function anchorPage(spineIndex, anchor) {
+            const contents = contentsFor(spineIndex);
+            if (!contents) return null;
+            const doc = contents.document;
+            let el = doc.getElementById(anchor);
+            if (!el) { try { el = doc.getElementById(decodeURIComponent(anchor)); } catch (e) {} }
+            if (!el) { try { el = doc.querySelector(`[name="${CSS.escape(anchor)}"]`); } catch (e) {} }
+            if (!el) return null;
+            const delta = rendition.manager?.layout?.delta || contents.window.innerWidth;
+            return Math.floor((el.getBoundingClientRect().left + 2) / delta) + 1;
+        }
+
+        function currentChapter(loc) {
+            if (!loc || !loc.start || !chapters.length) return null;
+            const si = loc.start.index;
+            const page = loc.start.displayed?.page || 1;
+            let cur = null, curIdx = -1;
+            for (let i = 0; i < chapters.length; i++) {
+                const c = chapters[i];
+                if (c.spine < si) { cur = c; curIdx = i; continue; }
+                if (c.spine > si) break;
+                if (!c.anchor) { cur = c; curIdx = i; continue; }
+                const ap = anchorPage(si, c.anchor);
+                if (ap === null || ap <= page) { cur = c; curIdx = i; } else break;
+            }
+            return cur ? { ...cur, idx: curIdx } : null;
+        }
+
+        // Сколько страниц осталось до конца главы
+        function pagesLeftInChapter(loc, ch) {
+            const si = loc.start.index;
+            const page = loc.start.displayed?.page || 1;
+            const total = loc.start.displayed?.total || 1;
+            const next = ch ? chapters[ch.idx + 1] : chapters.find(c => c.spine > si);
+
+            if (next && next.spine === si && next.anchor) {
+                const ap = anchorPage(si, next.anchor);
+                if (ap !== null) return Math.max(0, ap - page - 1);
+            }
+
+            let left = Math.max(0, total - page);
+            const endSpine = next ? next.spine : book.spine.length;
+            if (endSpine > si + 1 && locationsReady) {
+                // Глава продолжается в следующих файлах — оцениваем по объёму текста
+                const contents = contentsFor(si);
+                const chars = contents?.document?.body?.textContent?.length || 0;
+                const charsPerPage = chars > 0 ? chars / total : 1500;
+                let locs = 0;
+                for (let s = si + 1; s < endSpine; s++) locs += locCount[s] || 0;
+                left += Math.round((locs * LOC_CHARS) / charsPerPage);
+            }
+            return left;
+        }
+
+        // ---------- Проценты ----------
+        book.ready.then(async () => {
+            const cacheKey = KEY("locations:" + LOC_CHARS);
+            let cached = null;
+            try { cached = localStorage.getItem(cacheKey); } catch (e) {}
+            if (cached) {
+                book.locations.load(cached);
+            } else {
+                await book.locations.generate(LOC_CHARS);
+                try { localStorage.setItem(cacheKey, book.locations.save()); } catch (e) {}
+            }
+            locCount = {};
+            const n = book.locations.length();
+            for (let i = 0; i < n; i++) {
+                try {
+                    const sp = new ePub.CFI(book.locations.cfiFromLocation(i)).spinePos;
+                    locCount[sp] = (locCount[sp] || 0) + 1;
+                } catch (e) {}
+            }
+            locationsReady = true;
+            $("progress-slider").disabled = false;
+            updateFooter();
         });
 
-        function updateProgress(location) {
-            if (!book.locations.length()) return;
-            const cur = location || rendition.currentLocation();
-            if (cur && cur.start) {
-                const pct = Math.floor(book.locations.percentageFromCfi(cur.start.cfi) * 100);
-                document.getElementById("progress-slider").value = pct;
+        function pctOf(cfi) {
+            if (!locationsReady) return null;
+            try { return book.locations.percentageFromCfi(cfi); } catch (e) { return null; }
+        }
 
-                const displayed = book.spine.get(cur.start.cfi);
-                if (displayed && displayed.href) {
-                    document.getElementById("chapter-title").innerText = `Глава: ${displayed.idref || "Текущая"}`;
-                }
-                const pagesLeft = Math.max(1, Math.round((100 - pct) * 0.4));
-                document.getElementById("chapter-pages-left").innerText = `еще ${pagesLeft} стр.`;
+        function setProgressUI(p) {
+            const slider = $("progress-slider");
+            slider.value = Math.round(p * 1000);
+            slider.style.setProperty("--fill", (p * 100).toFixed(2) + "%");
+            $("book-percent").textContent = `${Math.floor(p * 100)}% от всей книги`;
+        }
+
+        function updateFooter() {
+            const loc = lastLoc;
+            if (!loc || !loc.start) return;
+            const ch = currentChapter(loc);
+            $("chapter-title").textContent = "Глава: " + (ch ? ch.label : "—");
+            const left = pagesLeftInChapter(loc, ch);
+            $("chapter-pages-left").textContent = left > 0 ? `еще ${left} стр.` : "конец главы";
+            if (!sliderDragging && locationsReady) {
+                const p = loc.atEnd ? 1 : (pctOf(loc.start.cfi) ?? 0);
+                setProgressUI(p);
             }
         }
 
-        document.getElementById("progress-slider").addEventListener("change", (e) => {
-            const cfi = book.locations.cfiFromPercentage(e.target.value / 100);
-            rendition.display(cfi);
+        const slider = $("progress-slider");
+        slider.addEventListener("input", () => {
+            sliderDragging = true;
+            const p = slider.value / 1000;
+            slider.style.setProperty("--fill", (p * 100).toFixed(2) + "%");
+            $("book-percent").textContent = `${Math.floor(p * 100)}% от всей книги`;
+        });
+        slider.addEventListener("change", () => {
+            sliderDragging = false;
+            if (!locationsReady) return;
+            const cfi = book.locations.cfiFromPercentage(slider.value / 1000);
+            if (cfi) rendition.display(cfi);
         });
 
+        rendition.on("relocated", (loc) => {
+            lastLoc = loc;
+            store.set("cfi", loc.start.cfi);
+            updateFooter();
+            updateBookmarkIcon();
+            requestAnimationFrame(refreshMarks);
+        });
+        rendition.on("rendered", () => setTimeout(refreshMarks, 300));
+
         // ==========================================
-        // ОБРАБОТКА СВАЙПОВ И ВЫДЕЛЕНИЙ
+        // ЖЕСТЫ: СВАЙП, ДВОЙНОЙ ТАП
         // ==========================================
-        let lastTapTime = 0;
+        let lastTouchTs = 0;
+        let lastTapTs = 0;
+        let tapTimer = null;
+        let turning = false;
 
-        rendition.on("rendered", (section, view) => {
-            const frameDoc = view.document;
-            if (!frameDoc) return;
+        function hasSelection(doc) {
+            try { const s = doc.getSelection(); return !!(s && s.toString().trim().length); } catch (e) { return false; }
+        }
 
-            let startX = 0, startY = 0, currentX = 0;
-            let isSwiping = false;
+        function snapBack() {
+            viewerEl.classList.remove("dragging");
+            viewerEl.style.transform = "translateX(0)";
+        }
 
-            frameDoc.addEventListener("touchstart", (e) => {
-                startX = e.touches[0].clientX;
-                startY = e.touches[0].clientY;
-                currentX = startX;
-                isSwiping = false;
+        function turnPage(dir) {
+            if (turning) return;
+            turning = true;
+            hideToolbar();
+            viewerEl.classList.remove("dragging");
+            viewerEl.style.transform = `translateX(${dir > 0 ? "-100%" : "100%"})`;
+            setTimeout(async () => {
+                try { await (dir > 0 ? rendition.next() : rendition.prev()); } catch (e) {}
                 viewerEl.classList.add("dragging");
-            }, { passive: true });
-
-            frameDoc.addEventListener("touchmove", (e) => {
-                currentX = e.touches[0].clientX;
-                const diffX = currentX - startX;
-                const diffY = e.touches[0].clientY - startY;
-
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
-                    isSwiping = true;
-                    viewerEl.style.transform = `translateX(${diffX * 0.75}px)`;
-                }
-            }, { passive: true });
-
-            frameDoc.addEventListener("touchend", (e) => {
+                viewerEl.style.transform = `translateX(${dir > 0 ? "100%" : "-100%"})`;
+                void viewerEl.offsetWidth;
                 viewerEl.classList.remove("dragging");
-                const diffX = currentX - startX;
-                const totalDiff = Math.abs(diffX);
+                viewerEl.style.transform = "translateX(0)";
+                setTimeout(() => { turning = false; }, 240);
+            }, 200);
+        }
 
-                if (isSwiping && totalDiff > 50) {
-                    if (diffX < 0) {
-                        viewerEl.style.transform = "translateX(-100vw)";
-                        setTimeout(() => {
-                            rendition.next();
-                            viewerEl.style.transform = "translateX(0)";
-                        }, 180);
-                    } else {
-                        viewerEl.style.transform = "translateX(100vw)";
-                        setTimeout(() => {
-                            rendition.prev();
-                            viewerEl.style.transform = "translateX(0)";
-                        }, 180);
-                    }
-                    hideSelectionToolbar();
+        function handleTap(screenX) {
+            const w = window.innerWidth;
+            const center = screenX > w * 0.25 && screenX < w * 0.75;
+            const now = Date.now();
+            if (center && now - lastTapTs < 320) {
+                lastTapTs = 0;
+                clearTimeout(tapTimer);
+                togglePanels();
+                return;
+            }
+            lastTapTs = center ? now : 0;
+            // одиночный тап при открытых панелях — скрыть их
+            if (uiVisible) {
+                clearTimeout(tapTimer);
+                tapTimer = setTimeout(() => { if (uiVisible) closeAll(); }, 330);
+            }
+        }
+
+        function bindGestures(contents) {
+            const doc = contents.document;
+            const win = contents.window;
+            // В режиме страниц iframe шире экрана — переводим координаты в экранные
+            const frameLeft = () => { try { return win.frameElement.getBoundingClientRect().left; } catch (e) { return 0; } };
+
+            let sx = 0, sy = 0, cx = 0, cy = 0, t0 = 0;
+            let swiping = false, selecting = false;
+
+            doc.addEventListener("touchstart", (e) => {
+                if (e.touches.length > 1) return;
+                lastTouchTs = Date.now();
+                const t = e.touches[0];
+                sx = cx = t.clientX;
+                sy = cy = t.clientY;
+                t0 = Date.now();
+                swiping = false;
+                selecting = hasSelection(doc);
+            }, { passive: true });
+
+            doc.addEventListener("touchmove", (e) => {
+                if (selecting || e.touches.length > 1) return;
+                const t = e.touches[0];
+                cx = t.clientX;
+                cy = t.clientY;
+                const dx = cx - sx, dy = cy - sy;
+                if (!swiping && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2 && !hasSelection(doc)) {
+                    swiping = true;
+                    viewerEl.classList.add("dragging");
+                    hideToolbar();
+                }
+                if (swiping) viewerEl.style.transform = `translateX(${dx * 0.75}px)`;
+            }, { passive: true });
+
+            doc.addEventListener("touchend", () => {
+                lastTouchTs = Date.now();
+                const dx = cx - sx, dy = cy - sy;
+                if (swiping) {
+                    swiping = false;
+                    if (Math.abs(dx) > 50) turnPage(dx < 0 ? 1 : -1);
+                    else snapBack();
                     return;
                 }
-
-                viewerEl.style.transform = "translateX(0)";
-
-                const selection = frameDoc.getSelection();
-                if (selection && selection.toString().trim().length > 0) return;
-
-                // Двойной тап по центру
-                if (!isSwiping && totalDiff < 10) {
-                    const now = Date.now();
-                    const width = window.innerWidth;
-                    if (now - lastTapTime < 320 && startX > width * 0.25 && startX < width * 0.75) {
-                        togglePanels();
-                        lastTapTime = 0;
-                        return;
-                    }
-                    lastTapTime = now;
+                if (selecting || hasSelection(doc)) return;
+                if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && Date.now() - t0 < 350) {
+                    handleTap(sx + frameLeft());
                 }
             }, { passive: true });
 
-            restoreSavedHighlights();
+            doc.addEventListener("touchcancel", () => {
+                if (swiping) { swiping = false; snapBack(); }
+            }, { passive: true });
+
+            // Десктоп Telegram: двойной клик мышью
+            doc.addEventListener("dblclick", (e) => {
+                if (Date.now() - lastTouchTs < 1000) return;
+                const x = e.clientX + frameLeft();
+                if (x > window.innerWidth * 0.25 && x < window.innerWidth * 0.75) togglePanels();
+            });
+
+            doc.addEventListener("selectionchange", () => {
+                if (!hasSelection(doc)) scheduleHideToolbar();
+            });
+        }
+
+        function onKey(e) {
+            if (e.key === "ArrowRight") turnPage(1);
+            if (e.key === "ArrowLeft") turnPage(-1);
+        }
+        rendition.on("keyup", onKey);
+        document.addEventListener("keyup", (e) => {
+            if (e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT")) return;
+            onKey(e);
         });
 
         // ==========================================
-        // ВЫДЕЛЕНИЕ: ЗАМЕТКА, ЦИТАТА, КОПИРОВАНИЕ, ПОДЕЛИТЬСЯ
+        // ВЫДЕЛЕНИЕ ТЕКСТА
         // ==========================================
+        const toolbar = $("selection-toolbar");
+        let activeSel = null;
+        let toolbarPressing = false;
+        let hideTimer = null;
+
         rendition.on("selected", (cfiRange, contents) => {
-            book.getRange(cfiRange).then(range => {
-                if (!range) return;
-                const text = range.toString().trim();
-                if (!text) return;
-
-                activeSelection = { cfi: cfiRange, text: text };
-
-                const rect = range.getBoundingClientRect();
-                const toolbar = document.getElementById("selection-toolbar");
-                toolbar.style.left = `${Math.min(window.innerWidth - 130, Math.max(130, rect.left + rect.width / 2))}px`;
-                toolbar.style.top = `${Math.max(70, rect.top - 10)}px`;
-                toolbar.style.display = "flex";
-            });
+            let range;
+            try { range = contents.range(cfiRange); } catch (e) { return; }
+            if (!range) return;
+            const text = range.toString().replace(/\s+/g, " ").trim();
+            if (!text) return;
+            activeSel = { cfi: cfiRange, text, contents };
+            if (uiVisible) setPanels(false);
+            showToolbar(range, contents);
         });
 
-        function hideSelectionToolbar() {
-            document.getElementById("selection-toolbar").style.display = "none";
-            activeSelection = null;
-        }
+        function showToolbar(range, contents) {
+            clearTimeout(hideTimer);
+            let rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+            if (!rects.length) rects = [range.getBoundingClientRect()];
+            let fr = { left: 0, top: 0 };
+            try { fr = contents.window.frameElement.getBoundingClientRect(); } catch (e) {}
 
-        function saveSelection(type) {
-            if (!activeSelection) return;
-
-            const key = type === 'quote' ? "book_quotes" : "book_notes";
-            const items = JSON.parse(localStorage.getItem(key) || "[]");
-
-            items.unshift({
-                text: activeSelection.text,
-                cfi: activeSelection.cfi,
-                date: new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+            let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+            rects.forEach(r => {
+                const L = r.left + fr.left, R = r.right + fr.left;
+                if (R < 0 || L > window.innerWidth) return; // строки с других страниц
+                top = Math.min(top, r.top + fr.top);
+                bottom = Math.max(bottom, r.bottom + fr.top);
+                left = Math.min(left, L);
+                right = Math.max(right, R);
             });
+            if (top === Infinity) return;
 
-            localStorage.setItem(key, JSON.stringify(items));
+            toolbar.style.visibility = "hidden";
+            toolbar.classList.add("visible");
+            const w = toolbar.offsetWidth, h = toolbar.offsetHeight;
 
-            const color = type === 'quote' ? "#07C980" : "#D7C980";
-            rendition.annotations.highlight(activeSelection.cfi, {}, () => {}, `highlight-${type}`, { fill: color, fillOpacity: "0.35" });
+            // Под выделением (системное меню Android появляется над ним), если места нет — над
+            let y = bottom + 30;
+            if (y + h > window.innerHeight - 12) y = top - h - 14;
+            y = Math.max(12, Math.min(y, window.innerHeight - h - 12));
+            let x = (left + right) / 2 - w / 2;
+            x = Math.max(12, Math.min(x, window.innerWidth - w - 12));
 
-            hideSelectionToolbar();
-            if (tg) tg.HapticFeedback?.notificationOccurred("success");
+            toolbar.style.left = x + "px";
+            toolbar.style.top = y + "px";
+            toolbar.style.visibility = "";
         }
 
-        function copySelectionText() {
-            if (!activeSelection) return;
-            navigator.clipboard.writeText(activeSelection.text).then(() => {
-                hideSelectionToolbar();
-                if (tg) tg.HapticFeedback?.notificationOccurred("success");
-            });
+        function hideToolbar() {
+            clearTimeout(hideTimer);
+            toolbar.classList.remove("visible");
         }
 
-        function shareSelectionText() {
-            if (!activeSelection) return;
-            if (navigator.share) {
-                navigator.share({
-                    title: document.getElementById("book-title").innerText,
-                    text: `«${activeSelection.text}»`
-                }).catch(() => {});
-            } else if (tg) {
-                tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(activeSelection.text)}`);
+        function scheduleHideToolbar() {
+            clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => { if (!toolbarPressing) hideToolbar(); }, 200);
+        }
+
+        function clearSelection() {
+            try { activeSel?.contents?.window?.getSelection()?.removeAllRanges(); } catch (e) {}
+        }
+
+        toolbar.addEventListener("pointerdown", () => {
+            toolbarPressing = true;
+            setTimeout(() => { toolbarPressing = false; }, 500);
+        });
+
+        toolbar.addEventListener("click", async (e) => {
+            const btn = e.target.closest("[data-act]");
+            if (!btn || !activeSel) return;
+            const sel = activeSel;
+            const act = btn.dataset.act;
+
+            if (act === "quote") {
+                const item = makeItem(sel);
+                quotes.unshift(item);
+                saveAll();
+                addHl(item, "quote");
+                toast("Цитата сохранена");
+                haptic();
+            } else if (act === "note") {
+                openNoteSheet(sel);
+            } else if (act === "copy") {
+                const ok = await copyText(sel.text);
+                toast(ok ? "Скопировано" : "Не удалось скопировать");
+                if (ok) haptic();
+            } else if (act === "share") {
+                shareText(sel.text);
             }
-            hideSelectionToolbar();
+            clearSelection();
+            hideToolbar();
+            activeSel = null;
+        });
+
+        function makeItem(sel, extra = {}) {
+            const ch = currentChapter(lastLoc);
+            return {
+                id: uid(),
+                cfi: sel.cfi,
+                text: sel.text,
+                chapter: ch ? ch.label : "",
+                pct: pctOf(sel.cfi),
+                date: nowLabel(),
+                ...extra
+            };
         }
 
-        function restoreSavedHighlights() {
-            const quotes = JSON.parse(localStorage.getItem("book_quotes") || "[]");
-            quotes.forEach(q => {
-                rendition.annotations.highlight(q.cfi, {}, () => {}, "highlight-quote", { fill: "#07C980", fillOpacity: "0.35" });
-            });
-            const notes = JSON.parse(localStorage.getItem("book_notes") || "[]");
-            notes.forEach(n => {
-                rendition.annotations.highlight(n.cfi, {}, () => {}, "highlight-note", { fill: "#D7C980", fillOpacity: "0.35" });
-            });
+        async function copyText(text) {
+            try { await navigator.clipboard.writeText(text); return true; }
+            catch (e) {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try { ok = document.execCommand("copy"); } catch (_) {}
+                ta.remove();
+                return ok;
+            }
         }
 
-        // ==========================================
-        // ЗАКЛАДКИ (СМЕНА ИКОНКИ BLACK ↔ RED)
-        // ==========================================
-        function toggleCurrentBookmark() {
-            const loc = rendition.currentLocation();
-            if (!loc || !loc.start) return;
-
-            const cfi = loc.start.cfi;
-            let bookmarks = JSON.parse(localStorage.getItem("book_bookmarks") || "[]");
-            const existingIdx = bookmarks.findIndex(b => b.cfi === cfi);
-            const iconImg = document.getElementById("bookmark-icon-img");
-
-            if (existingIdx >= 0) {
-                bookmarks.splice(existingIdx, 1);
-                iconImg.src = "icons/bookmark_black.svg";
+        function shareText(text) {
+            const title = $("book-title").textContent;
+            const msg = `«${text}»\n— ${title}`;
+            if (tg && tg.platform && tg.platform !== "unknown") {
+                tg.openTelegramLink("https://t.me/share/url?url=" + encodeURIComponent(msg));
+            } else if (navigator.share) {
+                navigator.share({ text: msg }).catch(() => {});
             } else {
-                bookmarks.unshift({
-                    cfi: cfi,
-                    preview: document.getElementById("chapter-title").innerText,
-                    date: new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
-                });
-                iconImg.src = "icons/bookmark_red.svg";
-                if (tg) tg.HapticFeedback?.notificationOccurred("success");
-            }
-            localStorage.setItem("book_bookmarks", JSON.stringify(bookmarks));
-        }
-
-        function checkBookmarkState(cfi) {
-            const bookmarks = JSON.parse(localStorage.getItem("book_bookmarks") || "[]");
-            const isBookmarked = bookmarks.some(b => b.cfi === cfi);
-            const iconImg = document.getElementById("bookmark-icon-img");
-            if (iconImg) {
-                iconImg.src = isBookmarked ? "icons/bookmark_red.svg" : "icons/bookmark_black.svg";
+                copyText(msg).then(ok => toast(ok ? "Скопировано" : "Не удалось поделиться"));
             }
         }
 
-        // ==========================================
-        // ОТКРЫТИЕ ШТОРОК
-        // ==========================================
-        function openDrawer(type) {
-            closeAllPanels();
-            const listEl = document.getElementById(`${type}-list`);
-            listEl.innerHTML = "";
+        // ---------- Заметка ----------
+        let pendingNote = null;
 
-            if (type === 'toc') {
-                document.getElementById("toc-drawer").classList.add("visible");
-            } else {
-                const key = type === 'bookmarks' ? "book_bookmarks" : (type === 'quotes' ? "book_quotes" : "book_notes");
-                const items = JSON.parse(localStorage.getItem(key) || "[]");
+        function openNoteSheet(sel) {
+            closeAll();
+            pendingNote = { cfi: sel.cfi, text: sel.text };
+            $("note-excerpt").textContent = `«${sel.text}»`;
+            $("note-input").value = "";
+            $("note-sheet").classList.add("visible");
+            showOverlay(true);
+            setTimeout(() => $("note-input").focus(), 260);
+        }
 
-                if (items.length === 0) {
-                    listEl.innerHTML = `<li style="padding: 20px; opacity: 0.5; text-align: center;">Список пуст</li>`;
-                } else {
-                    items.forEach(it => {
-                        const li = document.createElement("li");
-                        li.className = `card-item type-${type.slice(0, -1)}`;
-                        li.innerHTML = `
-                            <div style="font-size: 13px; line-height: 1.4;">«${it.text || it.preview || "Закладка"}»</div>
-                            <div class="card-date">${it.date}</div>
-                        `;
-                        li.onclick = () => {
-                            rendition.display(it.cfi);
-                            closeAllPanels();
-                        };
-                        listEl.appendChild(li);
-                    });
+        $("btn-note-save").addEventListener("click", () => {
+            if (!pendingNote) return closeAll();
+            const item = makeItem(pendingNote, { comment: $("note-input").value.trim() });
+            notes.unshift(item);
+            saveAll();
+            addHl(item, "note");
+            pendingNote = null;
+            $("note-input").blur();
+            closeAll();
+            toast("Заметка сохранена");
+            haptic();
+        });
+        $("btn-note-close").addEventListener("click", () => { pendingNote = null; closeAll(); });
+
+        // ==========================================
+        // ЗАКЛАДКИ
+        // ==========================================
+        function pageBookmarks(loc) {
+            if (!loc || !loc.start || !loc.end) return [];
+            return bookmarks.filter(b => cmpCfi(b.cfi, loc.start.cfi) >= 0 && cmpCfi(b.cfi, loc.end.cfi) <= 0);
+        }
+
+        function updateBookmarkIcon() {
+            $("btn-bookmark").classList.toggle("on", pageBookmarks(lastLoc).length > 0);
+        }
+
+        function excerptAt(cfi) {
+            try {
+                const r = rendition.getRange(cfi);
+                if (!r) return "";
+                const node = r.startContainer;
+                let s = node.nodeType === 3 ? node.textContent.slice(r.startOffset) : node.textContent;
+                if (s.trim().length < 60) {
+                    const el = node.nodeType === 3 ? node.parentElement : node;
+                    const block = el?.closest?.("p, li, blockquote, div, h1, h2, h3, h4");
+                    if (block) s = block.textContent;
                 }
-                document.getElementById(`${type}-drawer`).classList.add("visible");
+                return s.replace(/\s+/g, " ").trim().slice(0, 140);
+            } catch (e) { return ""; }
+        }
+
+        function toggleBookmark() {
+            const loc = lastLoc || rendition.currentLocation();
+            if (!loc || !loc.start) return;
+            const onPage = pageBookmarks(loc);
+            if (onPage.length) {
+                const ids = new Set(onPage.map(b => b.id));
+                bookmarks = bookmarks.filter(b => !ids.has(b.id));
+                toast("Закладка удалена");
+            } else {
+                const ch = currentChapter(loc);
+                bookmarks.unshift({
+                    id: uid(),
+                    cfi: loc.start.cfi,
+                    excerpt: excerptAt(loc.start.cfi),
+                    chapter: ch ? ch.label : "",
+                    pct: pctOf(loc.start.cfi),
+                    date: nowLabel()
+                });
+                toast("Закладка добавлена");
+                haptic();
             }
-            document.getElementById("overlay").classList.add("visible");
+            saveAll();
+            updateBookmarkIcon();
         }
 
         // ==========================================
-        // ТЕМЫ И ОФОРМЛЕНИЕ
+        // ШТОРКИ И СПИСКИ
         // ==========================================
-        function applyTheme(name, save = true) {
-            let t = themes[name];
-            if (name === 'system') {
-                const isDark = tg?.colorScheme === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
-                t = isDark ? themes.black : themes.white;
+        const LISTS = {
+            bookmarks: { get: () => bookmarks, set: v => { bookmarks = v; }, empty: "Закладок пока нет.\nНажмите на значок закладки внизу, чтобы отметить страницу." },
+            quotes:    { get: () => quotes,    set: v => { quotes = v; },    empty: "Цитат пока нет.\nВыделите текст и нажмите «Цитата»." },
+            notes:     { get: () => notes,     set: v => { notes = v; },     empty: "Заметок пока нет.\nВыделите текст и нажмите «Заметка»." }
+        };
+
+        function el(tag, cls, text) {
+            const n = document.createElement(tag);
+            if (cls) n.className = cls;
+            if (text !== undefined) n.textContent = text;
+            return n;
+        }
+
+        function renderToc() {
+            const list = $("toc-list");
+            list.replaceChildren();
+            if (!toc.length) {
+                list.appendChild(el("li", "empty-state", "Оглавление загружается…"));
+                return;
             }
-
-            rendition.themes.select(name === 'system' ? (tg?.colorScheme === 'dark' ? 'black' : 'white') : name);
-            document.documentElement.style.setProperty("--bg-color", t.bg);
-            document.documentElement.style.setProperty("--text-color", t.text);
-            document.documentElement.style.setProperty("--ui-bg", t.ui);
-            document.documentElement.style.setProperty("--ui-border", t.border);
-            document.documentElement.style.setProperty("--accent", t.accent);
-            document.documentElement.style.setProperty("--sub-text", t.sub);
-
-            if (save) localStorage.setItem("book_theme", name);
+            const cur = currentChapter(lastLoc);
+            let activeEl = null;
+            toc.forEach((it, i) => {
+                const li = el("li", "toc-item", it.label);
+                li.style.paddingLeft = (18 + it.depth * 14) + "px";
+                if (cur && cur.tocIndex === i) { li.classList.add("active"); activeEl = li; }
+                li.addEventListener("click", () => {
+                    closeAll();
+                    let target = it.href;
+                    if (it.spine >= 0) target = book.spine.get(it.spine).href + (it.anchor ? "#" + it.anchor : "");
+                    rendition.display(target);
+                });
+                list.appendChild(li);
+            });
+            if (activeEl) setTimeout(() => activeEl.scrollIntoView({ block: "center" }), 280);
         }
 
-        function changeFontFamily(type) {
-            currentFontFamily = type;
-            localStorage.setItem("book_font_family", type);
+        function renderList(type) {
+            const cfg = LISTS[type];
+            const list = $(type + "-list");
+            list.replaceChildren();
+            const items = cfg.get();
+            if (!items.length) {
+                list.appendChild(el("li", "empty-state", cfg.empty));
+                return;
+            }
+            items.forEach(it => {
+                const li = el("li", "card card-" + type);
+                const body = type === "bookmarks"
+                    ? (it.excerpt ? `«${it.excerpt}…»` : (it.preview || "Закладка"))
+                    : `«${it.text}»`;
+                li.appendChild(el("div", "card-text", body));
+                if (type === "notes" && it.comment) li.appendChild(el("div", "card-comment", it.comment));
 
-            document.querySelectorAll(".font-chip").forEach(c => c.classList.remove("active"));
-            const btn = document.getElementById(`font-${type}`);
-            if (btn) btn.classList.add("active");
+                const p = typeof it.pct === "number" ? it.pct : pctOf(it.cfi);
+                const meta = [it.chapter, typeof p === "number" ? Math.floor(p * 100) + "%" : "", it.date].filter(Boolean).join(" · ");
+                li.appendChild(el("div", "card-meta", meta));
 
-            registerThemes();
-            applyTheme(localStorage.getItem("book_theme") || "black", false);
+                const del = el("button", "card-del", "✕");
+                del.setAttribute("aria-label", "Удалить");
+                del.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    cfg.set(cfg.get().filter(x => x.id !== it.id));
+                    if (type !== "bookmarks") {
+                        removeHl(it);
+                        // если на том же месте осталось выделение другого типа — вернуть его
+                        quotes.filter(q => q.cfi === it.cfi).forEach(q => addHl(q, "quote"));
+                        notes.filter(n => n.cfi === it.cfi).forEach(n => addHl(n, "note"));
+                    }
+                    saveAll();
+                    renderList(type);
+                    updateBookmarkIcon();
+                });
+                li.appendChild(del);
+
+                li.addEventListener("click", () => {
+                    closeAll();
+                    rendition.display(it.cfi);
+                });
+                list.appendChild(li);
+            });
         }
 
-        function changeFontSize(delta) {
-            currentFontSize = Math.min(28, Math.max(14, currentFontSize + delta));
-            rendition.themes.fontSize(`${currentFontSize}px`);
-            localStorage.setItem("book_font_size", currentFontSize);
+        function showOverlay(dim) {
+            const o = $("overlay");
+            o.classList.toggle("dim", !!dim);
+            o.classList.add("visible");
+        }
+
+        function openDrawer(type) {
+            closeAll();
+            if (type === "toc") renderToc(); else renderList(type);
+            $(type + "-drawer").classList.add("visible");
+            showOverlay(true);
+        }
+
+        function setPanels(visible) {
+            uiVisible = visible;
+            $("header").classList.toggle("visible", visible);
+            $("footer").classList.toggle("visible", visible);
         }
 
         function togglePanels() {
-            uiVisible = !uiVisible;
-            document.getElementById("header").classList.toggle("visible", uiVisible);
-            document.getElementById("footer").classList.toggle("visible", uiVisible);
-            if (!uiVisible) {
-                document.getElementById("settings-sheet").classList.remove("visible");
-                document.getElementById("overlay").classList.remove("visible");
+            hideToolbar();
+            const layerOpen = document.querySelector(".drawer.visible, .sheet.visible");
+            if (layerOpen) { closeAll(); return; }
+            setPanels(!uiVisible);
+        }
+
+        function closeAll() {
+            setPanels(false);
+            document.querySelectorAll(".sheet, .drawer").forEach(d => d.classList.remove("visible"));
+            $("overlay").classList.remove("visible", "dim");
+            hideToolbar();
+        }
+
+        function openSettings() {
+            $("footer").classList.remove("visible");
+            $("settings-sheet").classList.add("visible");
+            showOverlay(false);
+        }
+
+        function closeSettings() {
+            $("settings-sheet").classList.remove("visible");
+            $("overlay").classList.remove("visible", "dim");
+            if (uiVisible) $("footer").classList.add("visible");
+        }
+
+        // ==========================================
+        // ТЕМЫ, ШРИФТ, РАЗМЕР
+        // ==========================================
+        function applyTheme(name, save = true) {
+            if (!THEMES[name]) name = "black";
+            state.theme = name;
+            const t = THEMES[name];
+            const root = document.documentElement.style;
+            root.setProperty("--page-bg", t.bg);
+            root.setProperty("--page-text", t.text);
+            for (const [k, v] of Object.entries(PANEL[t.mode])) root.setProperty(k, v);
+
+            try { rendition.getContents().forEach(injectCss); } catch (e) {}
+            if (save) {
+                store.set("theme", name);
+                refreshAllHighlights();
             }
+
+            if (tg) {
+                try { tg.setHeaderColor(t.bg); } catch (e) {}
+                try { tg.setBackgroundColor(t.bg); } catch (e) {}
+                try { tg.setBottomBarColor && tg.setBottomBarColor(t.bg); } catch (e) {}
+            }
+            updateSettingsUI();
         }
 
-        function closeAllPanels() {
-            uiVisible = false;
-            document.getElementById("header").classList.remove("visible");
-            document.getElementById("footer").classList.remove("visible");
-            document.getElementById("settings-sheet").classList.remove("visible");
-            document.querySelectorAll(".drawer").forEach(d => d.classList.remove("visible"));
-            document.getElementById("overlay").classList.remove("visible");
-            hideSelectionToolbar();
+        function updateSettingsUI() {
+            document.querySelectorAll(".theme-btn").forEach(b => b.classList.toggle("active", b.dataset.theme === state.theme));
+            document.querySelectorAll(".font-chip").forEach(b => b.classList.toggle("active", b.dataset.font === state.font));
+            $("font-size-value").textContent = state.size;
         }
 
-        function openSettingsSheet() {
-            document.getElementById("footer").classList.remove("visible");
-            document.getElementById("settings-sheet").classList.add("visible");
+        // Перекладка текста с сохранением позиции и пересчётом подсветок
+        let relayoutTimer = null;
+        function scheduleRelayout() {
+            clearTimeout(relayoutTimer);
+            relayoutTimer = setTimeout(relayout, 220);
         }
+        async function relayout() {
+            const cfi = lastLoc?.start?.cfi || store.get("cfi", null);
+            hideToolbar();
+            try { rendition.getContents().forEach(injectCss); } catch (e) {}
+            try { rendition.manager && rendition.manager.clear(); } catch (e) {}
+            try { await rendition.display(cfi || undefined); } catch (e) {}
+            setTimeout(refreshMarks, 250);
+            setTimeout(refreshMarks, 700);
+        }
+
+        function changeFontFamily(f) {
+            if (!FONTS[f] || f === state.font) return;
+            state.font = f;
+            store.set("font", f);
+            updateSettingsUI();
+            scheduleRelayout();
+        }
+
+        function changeFontSize(delta) {
+            const next = Math.min(28, Math.max(14, state.size + delta));
+            if (next === state.size) return;
+            state.size = next;
+            store.set("size", next);
+            updateSettingsUI();
+            scheduleRelayout();
+        }
+
+        // ==========================================
+        // КНОПКИ
+        // ==========================================
+        $("btn-toc").addEventListener("click", () => openDrawer("toc"));
+        $("btn-bookmarks").addEventListener("click", () => openDrawer("bookmarks"));
+        $("btn-notes").addEventListener("click", () => openDrawer("notes"));
+        $("btn-quotes").addEventListener("click", () => openDrawer("quotes"));
+        $("btn-fonts").addEventListener("click", openSettings);
+        $("btn-bookmark").addEventListener("click", toggleBookmark);
+        $("btn-settings-close").addEventListener("click", closeSettings);
+        $("overlay").addEventListener("click", () => { pendingNote = null; closeAll(); });
+        document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeAll));
+        document.querySelectorAll(".theme-btn").forEach(b => b.addEventListener("click", () => applyTheme(b.dataset.theme)));
+        document.querySelectorAll(".font-chip").forEach(b => b.addEventListener("click", () => changeFontFamily(b.dataset.font)));
+        document.querySelectorAll(".stepper-btn").forEach(b => b.addEventListener("click", () => changeFontSize(parseInt(b.dataset.step, 10))));
+    })();
     </script>
 </body>
 </html>
