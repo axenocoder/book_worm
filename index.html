@@ -11,11 +11,12 @@
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
     <style>
         :root {
-            --bg-color: #0f0f10;
-            --text-color: #ececec;
-            --ui-bg: rgba(26, 26, 28, 0.96);
-            --ui-border: rgba(255, 255, 255, 0.1);
-            --accent: #ff4b4b;
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --ui-bg: rgba(0, 0, 0, 0.8);
+            --ui-border: rgba(255, 255, 255, 0.08);
+            --accent: #07C980;
+            --sub-text: rgba(161, 161, 161, 0.5);
         }
 
         * {
@@ -54,43 +55,14 @@
             transition: none;
         }
 
-        /* Прозрачный жест-перехватчик поверх книги */
-        #touch-layer {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 50;
-            background: transparent;
-        }
-
-        /* Индикатор-триггер меню вверху экрана */
-        .menu-trigger-badge {
-            position: fixed;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.12);
-            color: #ffffff;
-            font-size: 14px;
-            line-height: 1;
-            padding: 4px 14px;
-            border-radius: 12px;
-            z-index: 60;
-            cursor: pointer;
-            backdrop-filter: blur(8px);
-            opacity: 0.6;
-        }
-
         /* --- ХЕДЕР И ФУТЕР --- */
         .ui-panel {
             position: fixed;
             left: 0;
             width: 100%;
             background: var(--ui-bg);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             z-index: 100;
             transition: transform 0.25s ease, opacity 0.25s ease;
             box-sizing: border-box;
@@ -103,7 +75,21 @@
             align-items: center;
             justify-content: space-between;
             border-bottom: 1px solid var(--ui-border);
+            border-radius: 0 0 5px 5px;
             transform: translateY(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .footer {
+            bottom: 0;
+            padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-top: 1px solid var(--ui-border);
+            border-radius: 5px 5px 0 0;
+            transform: translateY(100%);
             opacity: 0;
             pointer-events: none;
         }
@@ -123,7 +109,7 @@
         }
 
         .header-title {
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             white-space: nowrap;
             overflow: hidden;
@@ -131,45 +117,33 @@
         }
 
         .header-author {
-            font-size: 12px;
-            opacity: 0.6;
+            font-size: 11px;
+            color: var(--sub-text);
             margin-top: 2px;
-        }
-
-        .footer {
-            bottom: 0;
-            padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            border-top: 1px solid var(--ui-border);
-            transform: translateY(100%);
-            opacity: 0;
-            pointer-events: none;
         }
 
         .progress-row {
             display: flex;
             justify-content: space-between;
-            font-size: 13px;
-            opacity: 0.75;
+            font-size: 12px;
+            color: var(--sub-text);
         }
 
         .progress-slider {
             width: 100%;
             -webkit-appearance: none;
-            height: 4px;
+            height: 3px;
             border-radius: 2px;
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(161, 161, 161, 0.2);
             outline: none;
         }
 
         .progress-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            background: #ffffff;
+            background: var(--accent);
             cursor: pointer;
         }
 
@@ -183,23 +157,68 @@
         .btn-icon {
             background: none;
             border: none;
-            color: inherit;
-            font-size: 20px;
             cursor: pointer;
             padding: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: inherit;
         }
 
-        /* --- ПАНЕЛЬ НАСТРОЙКИ С НАВИГАЦИЕЙ «НАЗАД» --- */
+        .btn-icon img {
+            width: 24px;
+            height: 24px;
+            display: block;
+            pointer-events: none;
+        }
+
+        /* --- ПЛАШКА ВЫДЕЛЕНИЯ ТЕКСТА --- */
+        .selection-toolbar {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(215, 201, 128, 0.3);
+            border-radius: 5px;
+            padding: 6px 12px;
+            display: none;
+            gap: 14px;
+            align-items: center;
+            z-index: 250;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            transform: translate(-50%, -120%);
+        }
+
+        .toolbar-btn {
+            background: none;
+            border: none;
+            color: #D7C980;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 10px;
+        }
+
+        .toolbar-btn img {
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+        }
+
+        /* --- ПАНЕЛЬ НАСТРОЙКИ (ШРИФТ И ТЕМЫ) --- */
         .settings-sheet {
             position: fixed;
             bottom: 0;
             left: 0;
             width: 100%;
             background: var(--ui-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
             border-top: 1px solid var(--ui-border);
+            border-radius: 5px 5px 0 0;
             padding: 16px 20px calc(18px + env(safe-area-inset-bottom));
             display: flex;
             flex-direction: column;
@@ -219,49 +238,39 @@
             align-items: center;
             font-size: 14px;
             font-weight: 600;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid var(--ui-border);
             padding-bottom: 10px;
-        }
-
-        .btn-back {
-            background: none;
-            border: none;
-            color: var(--accent);
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            padding: 0;
         }
 
         .theme-buttons {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
         }
 
         .theme-btn {
             border: 1px solid var(--ui-border);
-            border-radius: 10px;
+            border-radius: 5px;
             padding: 8px 0;
-            font-size: 13px;
+            font-size: 11px;
             cursor: pointer;
             font-weight: 500;
+            text-align: center;
         }
 
-        .theme-white { background: #f7f7f7; color: #111; }
+        .theme-white { background: #ffffff; color: #111; }
         .theme-sepia { background: #f4ecd8; color: #5b4636; }
         .theme-gray  { background: #333336; color: #eee; }
-        .theme-black { background: #000000; color: #aaa; border-color: #444; }
+        .theme-black { background: #000000; color: #aaa; border-color: #333; }
+        .theme-system { background: rgba(255,255,255,0.1); color: inherit; }
 
         .settings-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.04);
             padding: 8px 14px;
-            border-radius: 12px;
+            border-radius: 5px;
         }
 
         .font-chips {
@@ -270,25 +279,25 @@
         }
 
         .font-chip {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             color: inherit;
             border: 1px solid transparent;
-            border-radius: 8px;
+            border-radius: 5px;
             padding: 6px 10px;
-            font-size: 13px;
+            font-size: 12px;
             cursor: pointer;
         }
 
         .font-chip.active {
             border-color: var(--accent);
-            background: rgba(255, 75, 75, 0.15);
+            color: var(--accent);
         }
 
         .stepper-btn {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             color: inherit;
             border: none;
-            border-radius: 8px;
+            border-radius: 5px;
             width: 34px;
             height: 34px;
             font-size: 18px;
@@ -304,6 +313,8 @@
             max-width: 340px;
             height: 100%;
             background: var(--ui-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
             border-right: 1px solid var(--ui-border);
             z-index: 120;
             transform: translateX(-100%);
@@ -325,8 +336,8 @@
         }
 
         .drawer-header {
-            padding: 18px;
-            font-size: 16px;
+            padding: 16px 18px;
+            font-size: 15px;
             font-weight: 600;
             border-bottom: 1px solid var(--ui-border);
             display: flex;
@@ -349,16 +360,24 @@
             cursor: pointer;
         }
 
-        .quote-item {
+        .card-item {
             display: flex;
             flex-direction: column;
             gap: 6px;
-            border-left: 3px solid var(--accent);
             margin: 8px 14px;
             background: rgba(255, 255, 255, 0.03);
-            border-radius: 0 8px 8px 0;
+            border-radius: 4px;
             padding: 10px;
             cursor: pointer;
+        }
+
+        .card-item.type-quote { border-left: 3px solid var(--accent); }
+        .card-item.type-note { border-left: 3px solid #D7C980; }
+        .card-item.type-bookmark { border-left: 3px solid #ff4b4b; }
+
+        .card-date {
+            font-size: 11px;
+            color: var(--sub-text);
         }
 
         .overlay {
@@ -382,42 +401,74 @@
         <div id="viewer"></div>
     </div>
 
-    <!-- Надежный сенсорный слой управления -->
-    <div id="touch-layer"></div>
-    <div class="menu-trigger-badge" onclick="togglePanels()">••• Меню</div>
-
     <div id="overlay" class="overlay" onclick="closeAllPanels()"></div>
+
+    <!-- Всплывающая панель выделения текста с вашими SVG-иконками -->
+    <div id="selection-toolbar" class="selection-toolbar">
+        <button class="toolbar-btn" onclick="saveSelection('note')">
+            <img src="icons/notes.svg" alt="Заметка">
+            Заметка
+        </button>
+        <button class="toolbar-btn" style="color: var(--accent);" onclick="saveSelection('quote')">
+            <img src="icons/qoute.svg" alt="Цитата">
+            Цитата
+        </button>
+        <button class="toolbar-btn" onclick="copySelectionText()">
+            <img src="icons/copy.svg" alt="Копировать">
+            Копировать
+        </button>
+        <button class="toolbar-btn" onclick="shareSelectionText()">
+            <img src="icons/forward.svg" alt="Поделиться">
+            Поделиться
+        </button>
+    </div>
 
     <!-- Верхний Хедер -->
     <div id="header" class="ui-panel header">
-        <button class="btn-icon" onclick="openDrawer('toc')">☰</button>
+        <button class="btn-icon" onclick="openDrawer('toc')">
+            <svg style="width:24px;height:24px;fill:currentColor" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+        </button>
         <div class="header-title-box">
             <span id="book-title" class="header-title">Загрузка...</span>
             <span id="book-author" class="header-author">...</span>
         </div>
-        <button class="btn-icon" onclick="openDrawer('quotes')">”</button>
+        <!-- Кнопка списка всех закладок -->
+        <button class="btn-icon" onclick="openDrawer('bookmarks')">
+            <img src="icons/list_of_bookmarks.svg" alt="Список закладок">
+        </button>
     </div>
 
     <!-- Нижний Футер -->
     <div id="footer" class="ui-panel footer">
         <div class="progress-row">
-            <span id="chapter-title">Глава</span>
-            <span id="reading-percent">0%</span>
+            <span id="chapter-title">Глава: ...</span>
+            <span id="chapter-pages-left">еще ... стр.</span>
         </div>
         <input type="range" id="progress-slider" class="progress-slider" min="0" max="100" value="0">
         <div class="footer-tools">
-            <button class="btn-icon" onclick="openDrawer('toc')">📖</button>
-            <button class="btn-icon" onclick="openDrawer('quotes')">”</button>
-            <button class="btn-icon" style="color: var(--accent);" onclick="setBookmark()">🔖</button>
-            <button class="btn-icon" onclick="openSettingsSheet()">Aa</button>
+            <!-- 1. Заметки -->
+            <button class="btn-icon" onclick="openDrawer('notes')" title="Заметки">
+                <img src="icons/notes.svg" alt="Заметки">
+            </button>
+            <!-- 2. Цитаты -->
+            <button class="btn-icon" onclick="openDrawer('quotes')" title="Цитаты">
+                <img src="icons/qoute.svg" alt="Цитаты">
+            </button>
+            <!-- 3. Шрифты -->
+            <button class="btn-icon" onclick="openSettingsSheet()" title="Шрифты">
+                <img src="icons/fonts.svg" alt="Шрифты">
+            </button>
+            <!-- 4. Закладка (динамическое переключение black / red) -->
+            <button id="btn-bookmark" class="btn-icon" onclick="toggleCurrentBookmark()" title="Закладка">
+                <img id="bookmark-icon-img" src="icons/bookmark_black.svg" alt="Закладка">
+            </button>
         </div>
     </div>
 
-    <!-- Меню настроек с кнопкой возврата назад -->
+    <!-- Панель настроек оформления -->
     <div id="settings-sheet" class="settings-sheet">
         <div class="settings-header">
-            <button class="btn-back" onclick="backToMainMenu()">← Меню</button>
-            <span>Настройки оформления</span>
+            <span>Настройки отображения</span>
             <button class="btn-icon" style="font-size: 16px; padding: 0;" onclick="closeAllPanels()">✕</button>
         </div>
 
@@ -426,10 +477,11 @@
             <button class="theme-btn theme-sepia" onclick="applyTheme('sepia')">Сепия</button>
             <button class="theme-btn theme-gray" onclick="applyTheme('gray')">Серый</button>
             <button class="theme-btn theme-black" onclick="applyTheme('black')">Черный</button>
+            <button class="theme-btn theme-system" onclick="applyTheme('system')">Как в системе</button>
         </div>
 
         <div class="settings-row">
-            <span style="font-size: 14px;">Шрифт</span>
+            <span style="font-size: 13px;">Шрифт</span>
             <div class="font-chips">
                 <button class="font-chip active" id="font-system" onclick="changeFontFamily('system')">Системный</button>
                 <button class="font-chip" id="font-serif" onclick="changeFontFamily('serif')">Serif</button>
@@ -438,15 +490,15 @@
         </div>
 
         <div class="settings-row">
-            <span style="font-size: 14px;">Размер текста</span>
-            <div style="display: flex; gap: 10px;">
+            <span style="font-size: 13px;">Размер текста</span>
+            <div style="display: flex; gap: 8px;">
                 <button class="stepper-btn" onclick="changeFontSize(-1)">−</button>
                 <button class="stepper-btn" onclick="changeFontSize(1)">+</button>
             </div>
         </div>
     </div>
 
-    <!-- Оглавление -->
+    <!-- Шторка: Оглавление -->
     <div id="toc-drawer" class="drawer">
         <div class="drawer-header">
             <span>Содержание</span>
@@ -455,10 +507,28 @@
         <ul id="toc-list" class="drawer-list"></ul>
     </div>
 
-    <!-- Цитаты -->
+    <!-- Шторка: Закладки -->
+    <div id="bookmarks-drawer" class="drawer right-side">
+        <div class="drawer-header">
+            <span>Закладки</span>
+            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
+        </div>
+        <ul id="bookmarks-list" class="drawer-list"></ul>
+    </div>
+
+    <!-- Шторка: Заметки -->
+    <div id="notes-drawer" class="drawer">
+        <div class="drawer-header">
+            <span>Мои заметки</span>
+            <button class="btn-icon" onclick="closeAllPanels()">✕</button>
+        </div>
+        <ul id="notes-list" class="drawer-list"></ul>
+    </div>
+
+    <!-- Шторка: Цитаты -->
     <div id="quotes-drawer" class="drawer right-side">
         <div class="drawer-header">
-            <span>Цитаты</span>
+            <span>Мои цитаты</span>
             <button class="btn-icon" onclick="closeAllPanels()">✕</button>
         </div>
         <ul id="quotes-list" class="drawer-list"></ul>
@@ -486,17 +556,19 @@
         let lastReadLocation = localStorage.getItem("book_last_location");
         let uiVisible = false;
 
+        let activeSelection = null;
+
         const fonts = {
             system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
             serif: "Georgia, 'Times New Roman', serif",
-            mono: "Menlo, Monaco, Consolas, 'Courier New', monospace"
+            mono: "Menlo, Monaco, Consolas, monospace"
         };
 
         const themes = {
-            white: { bg: "#ffffff", text: "#111111", ui: "rgba(245, 245, 247, 0.96)" },
-            sepia: { bg: "#f4ecd8", text: "#5b4636", ui: "rgba(238, 228, 206, 0.96)" },
-            gray:  { bg: "#2c2c2e", text: "#e5e5e7", ui: "rgba(44, 44, 46, 0.96)" },
-            black: { bg: "#000000", text: "#a1a1a6", ui: "rgba(20, 20, 22, 0.96)" }
+            white:  { bg: "#ffffff", text: "#000000", ui: "rgba(255, 255, 255, 0.85)", border: "rgba(0, 0, 0, 0.08)", accent: "#000000", sub: "rgba(0,0,0,0.5)" },
+            black:  { bg: "#000000", text: "#ffffff", ui: "rgba(0, 0, 0, 0.85)", border: "rgba(255, 255, 255, 0.08)", accent: "#07C980", sub: "rgba(161, 161, 161, 0.5)" },
+            sepia:  { bg: "#f4ecd8", text: "#5b4636", ui: "rgba(244, 236, 216, 0.88)", border: "rgba(91, 70, 54, 0.12)", accent: "#5b4636", sub: "rgba(91, 70, 54, 0.55)" },
+            gray:   { bg: "#2c2c2e", text: "#e5e5e7", ui: "rgba(35, 35, 38, 0.88)", border: "rgba(255, 255, 255, 0.08)", accent: "#07C980", sub: "rgba(161, 161, 161, 0.5)" }
         };
 
         function registerThemes() {
@@ -547,6 +619,7 @@
             const cfi = location.start.cfi;
             localStorage.setItem("book_last_location", cfi);
             updateProgress(location);
+            checkBookmarkState(cfi);
         });
 
         function updateProgress(location) {
@@ -554,8 +627,14 @@
             const cur = location || rendition.currentLocation();
             if (cur && cur.start) {
                 const pct = Math.floor(book.locations.percentageFromCfi(cur.start.cfi) * 100);
-                document.getElementById("reading-percent").innerText = `${pct}%`;
                 document.getElementById("progress-slider").value = pct;
+
+                const displayed = book.spine.get(cur.start.cfi);
+                if (displayed && displayed.href) {
+                    document.getElementById("chapter-title").innerText = `Глава: ${displayed.idref || "Текущая"}`;
+                }
+                const pagesLeft = Math.max(1, Math.round((100 - pct) * 0.4));
+                document.getElementById("chapter-pages-left").innerText = `еще ${pagesLeft} стр.`;
             }
         }
 
@@ -564,121 +643,248 @@
             rendition.display(cfi);
         });
 
-        // =======================================================
-        // ЕДИНЫЙ КОНТРОЛЛЕР СЕНСОРА: ТОЛЬКО СВАЙПЫ И ДВОЙНОЙ ТАП
-        // (ОДИНОЧНЫЙ ТАП БОЛЬШЕ СТРАНИЦЫ НЕ ЛИСТАЕТ)
-        // =======================================================
-        const touchLayer = document.getElementById("touch-layer");
-        let startX = 0, startY = 0, currentX = 0;
-        let isSwiping = false;
+        // ==========================================
+        // ОБРАБОТКА СВАЙПОВ И ВЫДЕЛЕНИЙ
+        // ==========================================
         let lastTapTime = 0;
 
-        touchLayer.addEventListener("touchstart", (e) => {
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-            currentX = startX;
-            isSwiping = false;
-            viewerEl.classList.add("dragging");
-        }, { passive: true });
+        rendition.on("rendered", (section, view) => {
+            const frameDoc = view.document;
+            if (!frameDoc) return;
 
-        touchLayer.addEventListener("touchmove", (e) => {
-            currentX = e.touches[0].clientX;
-            const diffX = currentX - startX;
-            const diffY = e.touches[0].clientY - startY;
+            let startX = 0, startY = 0, currentX = 0;
+            let isSwiping = false;
 
-            // Если движение горизонтальное — сдвигаем страницу
-            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
-                isSwiping = true;
-                viewerEl.style.transform = `translateX(${diffX * 0.75}px)`;
-            }
-        }, { passive: true });
+            frameDoc.addEventListener("touchstart", (e) => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                currentX = startX;
+                isSwiping = false;
+                viewerEl.classList.add("dragging");
+            }, { passive: true });
 
-        touchLayer.addEventListener("touchend", (e) => {
-            viewerEl.classList.remove("dragging");
-            const diffX = currentX - startX;
-            const totalDiff = Math.abs(diffX);
+            frameDoc.addEventListener("touchmove", (e) => {
+                currentX = e.touches[0].clientX;
+                const diffX = currentX - startX;
+                const diffY = e.touches[0].clientY - startY;
 
-            // 1. ПЕРЕЛИСТЫВАНИЕ ТОЛЬКО ПО СВАЙПУ (сдвиг более 50px)
-            if (isSwiping && totalDiff > 50) {
-                if (diffX < 0) {
-                    viewerEl.style.transform = "translateX(-100vw)";
-                    setTimeout(() => {
-                        rendition.next();
-                        viewerEl.style.transform = "translateX(0)";
-                    }, 180);
-                } else {
-                    viewerEl.style.transform = "translateX(100vw)";
-                    setTimeout(() => {
-                        rendition.prev();
-                        viewerEl.style.transform = "translateX(0)";
-                    }, 180);
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                    isSwiping = true;
+                    viewerEl.style.transform = `translateX(${diffX * 0.75}px)`;
                 }
-                return;
-            }
+            }, { passive: true });
 
-            // Возврат на место, если свайп был слишком короткий
-            viewerEl.style.transform = "translateX(0)";
+            frameDoc.addEventListener("touchend", (e) => {
+                viewerEl.classList.remove("dragging");
+                const diffX = currentX - startX;
+                const totalDiff = Math.abs(diffX);
 
-            // 2. ДВОЙНОЙ ТАП ДЛЯ ВЫЗОВА МЕНЮ (одиночные тапы игнорируются)
-            if (!isSwiping && totalDiff < 10) {
-                const now = Date.now();
-                if (now - lastTapTime < 340) {
-                    togglePanels();
-                    lastTapTime = 0;
+                if (isSwiping && totalDiff > 50) {
+                    if (diffX < 0) {
+                        viewerEl.style.transform = "translateX(-100vw)";
+                        setTimeout(() => {
+                            rendition.next();
+                            viewerEl.style.transform = "translateX(0)";
+                        }, 180);
+                    } else {
+                        viewerEl.style.transform = "translateX(100vw)";
+                        setTimeout(() => {
+                            rendition.prev();
+                            viewerEl.style.transform = "translateX(0)";
+                        }, 180);
+                    }
+                    hideSelectionToolbar();
                     return;
                 }
-                lastTapTime = now;
+
+                viewerEl.style.transform = "translateX(0)";
+
+                const selection = frameDoc.getSelection();
+                if (selection && selection.toString().trim().length > 0) return;
+
+                // Двойной тап по центру
+                if (!isSwiping && totalDiff < 10) {
+                    const now = Date.now();
+                    const width = window.innerWidth;
+                    if (now - lastTapTime < 320 && startX > width * 0.25 && startX < width * 0.75) {
+                        togglePanels();
+                        lastTapTime = 0;
+                        return;
+                    }
+                    lastTapTime = now;
+                }
+            }, { passive: true });
+
+            restoreSavedHighlights();
+        });
+
+        // ==========================================
+        // ВЫДЕЛЕНИЕ: ЗАМЕТКА, ЦИТАТА, КОПИРОВАНИЕ, ПОДЕЛИТЬСЯ
+        // ==========================================
+        rendition.on("selected", (cfiRange, contents) => {
+            book.getRange(cfiRange).then(range => {
+                if (!range) return;
+                const text = range.toString().trim();
+                if (!text) return;
+
+                activeSelection = { cfi: cfiRange, text: text };
+
+                const rect = range.getBoundingClientRect();
+                const toolbar = document.getElementById("selection-toolbar");
+                toolbar.style.left = `${Math.min(window.innerWidth - 130, Math.max(130, rect.left + rect.width / 2))}px`;
+                toolbar.style.top = `${Math.max(70, rect.top - 10)}px`;
+                toolbar.style.display = "flex";
+            });
+        });
+
+        function hideSelectionToolbar() {
+            document.getElementById("selection-toolbar").style.display = "none";
+            activeSelection = null;
+        }
+
+        function saveSelection(type) {
+            if (!activeSelection) return;
+
+            const key = type === 'quote' ? "book_quotes" : "book_notes";
+            const items = JSON.parse(localStorage.getItem(key) || "[]");
+
+            items.unshift({
+                text: activeSelection.text,
+                cfi: activeSelection.cfi,
+                date: new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+            });
+
+            localStorage.setItem(key, JSON.stringify(items));
+
+            const color = type === 'quote' ? "#07C980" : "#D7C980";
+            rendition.annotations.highlight(activeSelection.cfi, {}, () => {}, `highlight-${type}`, { fill: color, fillOpacity: "0.35" });
+
+            hideSelectionToolbar();
+            if (tg) tg.HapticFeedback?.notificationOccurred("success");
+        }
+
+        function copySelectionText() {
+            if (!activeSelection) return;
+            navigator.clipboard.writeText(activeSelection.text).then(() => {
+                hideSelectionToolbar();
+                if (tg) tg.HapticFeedback?.notificationOccurred("success");
+            });
+        }
+
+        function shareSelectionText() {
+            if (!activeSelection) return;
+            if (navigator.share) {
+                navigator.share({
+                    title: document.getElementById("book-title").innerText,
+                    text: `«${activeSelection.text}»`
+                }).catch(() => {});
+            } else if (tg) {
+                tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(activeSelection.text)}`);
             }
-        }, { passive: true });
+            hideSelectionToolbar();
+        }
 
-        // --- УПРАВЛЕНИЕ МЕНЮ ---
-        function togglePanels() {
-            uiVisible = !uiVisible;
-            document.getElementById("header").classList.toggle("visible", uiVisible);
-            document.getElementById("footer").classList.toggle("visible", uiVisible);
-            if (!uiVisible) {
-                document.getElementById("settings-sheet").classList.remove("visible");
-                document.getElementById("overlay").classList.remove("visible");
+        function restoreSavedHighlights() {
+            const quotes = JSON.parse(localStorage.getItem("book_quotes") || "[]");
+            quotes.forEach(q => {
+                rendition.annotations.highlight(q.cfi, {}, () => {}, "highlight-quote", { fill: "#07C980", fillOpacity: "0.35" });
+            });
+            const notes = JSON.parse(localStorage.getItem("book_notes") || "[]");
+            notes.forEach(n => {
+                rendition.annotations.highlight(n.cfi, {}, () => {}, "highlight-note", { fill: "#D7C980", fillOpacity: "0.35" });
+            });
+        }
+
+        // ==========================================
+        // ЗАКЛАДКИ (СМЕНА ИКОНКИ BLACK ↔ RED)
+        // ==========================================
+        function toggleCurrentBookmark() {
+            const loc = rendition.currentLocation();
+            if (!loc || !loc.start) return;
+
+            const cfi = loc.start.cfi;
+            let bookmarks = JSON.parse(localStorage.getItem("book_bookmarks") || "[]");
+            const existingIdx = bookmarks.findIndex(b => b.cfi === cfi);
+            const iconImg = document.getElementById("bookmark-icon-img");
+
+            if (existingIdx >= 0) {
+                bookmarks.splice(existingIdx, 1);
+                iconImg.src = "icons/bookmark_black.svg";
+            } else {
+                bookmarks.unshift({
+                    cfi: cfi,
+                    preview: document.getElementById("chapter-title").innerText,
+                    date: new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                });
+                iconImg.src = "icons/bookmark_red.svg";
+                if (tg) tg.HapticFeedback?.notificationOccurred("success");
+            }
+            localStorage.setItem("book_bookmarks", JSON.stringify(bookmarks));
+        }
+
+        function checkBookmarkState(cfi) {
+            const bookmarks = JSON.parse(localStorage.getItem("book_bookmarks") || "[]");
+            const isBookmarked = bookmarks.some(b => b.cfi === cfi);
+            const iconImg = document.getElementById("bookmark-icon-img");
+            if (iconImg) {
+                iconImg.src = isBookmarked ? "icons/bookmark_red.svg" : "icons/bookmark_black.svg";
             }
         }
 
-        function closeAllPanels() {
-            uiVisible = false;
-            document.getElementById("header").classList.remove("visible");
-            document.getElementById("footer").classList.remove("visible");
-            document.getElementById("settings-sheet").classList.remove("visible");
-            document.getElementById("toc-drawer").classList.remove("visible");
-            document.getElementById("quotes-drawer").classList.remove("visible");
-            document.getElementById("overlay").classList.remove("visible");
-        }
-
-        function openSettingsSheet() {
-            document.getElementById("footer").classList.remove("visible");
-            document.getElementById("settings-sheet").classList.add("visible");
-        }
-
-        function backToMainMenu() {
-            document.getElementById("settings-sheet").classList.remove("visible");
-            document.getElementById("footer").classList.add("visible");
-        }
-
+        // ==========================================
+        // ОТКРЫТИЕ ШТОРОК
+        // ==========================================
         function openDrawer(type) {
             closeAllPanels();
+            const listEl = document.getElementById(`${type}-list`);
+            listEl.innerHTML = "";
+
             if (type === 'toc') {
                 document.getElementById("toc-drawer").classList.add("visible");
-            } else if (type === 'quotes') {
-                renderQuotesList();
-                document.getElementById("quotes-drawer").classList.add("visible");
+            } else {
+                const key = type === 'bookmarks' ? "book_bookmarks" : (type === 'quotes' ? "book_quotes" : "book_notes");
+                const items = JSON.parse(localStorage.getItem(key) || "[]");
+
+                if (items.length === 0) {
+                    listEl.innerHTML = `<li style="padding: 20px; opacity: 0.5; text-align: center;">Список пуст</li>`;
+                } else {
+                    items.forEach(it => {
+                        const li = document.createElement("li");
+                        li.className = `card-item type-${type.slice(0, -1)}`;
+                        li.innerHTML = `
+                            <div style="font-size: 13px; line-height: 1.4;">«${it.text || it.preview || "Закладка"}»</div>
+                            <div class="card-date">${it.date}</div>
+                        `;
+                        li.onclick = () => {
+                            rendition.display(it.cfi);
+                            closeAllPanels();
+                        };
+                        listEl.appendChild(li);
+                    });
+                }
+                document.getElementById(`${type}-drawer`).classList.add("visible");
             }
             document.getElementById("overlay").classList.add("visible");
         }
 
+        // ==========================================
+        // ТЕМЫ И ОФОРМЛЕНИЕ
+        // ==========================================
         function applyTheme(name, save = true) {
-            const t = themes[name];
-            rendition.themes.select(name);
+            let t = themes[name];
+            if (name === 'system') {
+                const isDark = tg?.colorScheme === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
+                t = isDark ? themes.black : themes.white;
+            }
+
+            rendition.themes.select(name === 'system' ? (tg?.colorScheme === 'dark' ? 'black' : 'white') : name);
             document.documentElement.style.setProperty("--bg-color", t.bg);
             document.documentElement.style.setProperty("--text-color", t.text);
             document.documentElement.style.setProperty("--ui-bg", t.ui);
+            document.documentElement.style.setProperty("--ui-border", t.border);
+            document.documentElement.style.setProperty("--accent", t.accent);
+            document.documentElement.style.setProperty("--sub-text", t.sub);
+
             if (save) localStorage.setItem("book_theme", name);
         }
 
@@ -700,38 +906,29 @@
             localStorage.setItem("book_font_size", currentFontSize);
         }
 
-        function setBookmark() {
-            const loc = rendition.currentLocation();
-            if (loc && loc.start) {
-                localStorage.setItem("book_last_location", loc.start.cfi);
-                if (tg) tg.HapticFeedback?.notificationOccurred("success");
-                alert("🔖 Закладка сохранена!");
+        function togglePanels() {
+            uiVisible = !uiVisible;
+            document.getElementById("header").classList.toggle("visible", uiVisible);
+            document.getElementById("footer").classList.toggle("visible", uiVisible);
+            if (!uiVisible) {
+                document.getElementById("settings-sheet").classList.remove("visible");
+                document.getElementById("overlay").classList.remove("visible");
             }
         }
 
-        function renderQuotesList() {
-            const list = document.getElementById("quotes-list");
-            list.innerHTML = "";
-            const quotes = JSON.parse(localStorage.getItem("book_quotes") || "[]");
+        function closeAllPanels() {
+            uiVisible = false;
+            document.getElementById("header").classList.remove("visible");
+            document.getElementById("footer").classList.remove("visible");
+            document.getElementById("settings-sheet").classList.remove("visible");
+            document.querySelectorAll(".drawer").forEach(d => d.classList.remove("visible"));
+            document.getElementById("overlay").classList.remove("visible");
+            hideSelectionToolbar();
+        }
 
-            if (quotes.length === 0) {
-                list.innerHTML = `<li style="padding: 20px; opacity: 0.5; text-align: center;">У вас пока нет сохраненных цитат</li>`;
-                return;
-            }
-
-            quotes.forEach((q) => {
-                const li = document.createElement("li");
-                li.className = "quote-item";
-                li.innerHTML = `
-                    <div style="font-size: 13px; line-height: 1.4;">«${q.text}»</div>
-                    <div style="font-size: 11px; opacity: 0.5;">${q.date}</div>
-                `;
-                li.onclick = () => {
-                    rendition.display(q.cfi);
-                    closeAllPanels();
-                };
-                list.appendChild(li);
-            });
+        function openSettingsSheet() {
+            document.getElementById("footer").classList.remove("visible");
+            document.getElementById("settings-sheet").classList.add("visible");
         }
     </script>
 </body>
